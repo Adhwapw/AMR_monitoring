@@ -586,6 +586,91 @@ function get_combined_export_data(PDO $pdo, ?int $robotId, ?string $startDate, ?
 
     return ["rows" => $combined, "motor_names" => $motorNames];
 }
+function estimate_battery_remaining(PDO $pdo, int $robotId, int $lookbackPoints = 20): ?array
+{
+    $stmt = $pdo->prepare(
+        "SELECT logged_at, battery_level, charging
+         FROM robot_status_logs
+         WHERE robot_id = :robot_id AND battery_level IS NOT NULL
+         ORDER BY logged_at DESC
+         LIMIT :limit"
+    );
+    $stmt->bindValue(":robot_id", $robotId, PDO::PARAM_INT);
+    $stmt->bindValue(":limit", $lookbackPoints, PDO::PARAM_INT);
+    $stmt->execute();
+    $rows = array_reverse($stmt->fetchAll());
+
+    if (count($rows) < 3) {
+        return null; // data belum cukup buat estimasi yang masuk akal
+    }
+
+    // Kalau lagi charging, estimasi "sisa waktu habis" nggak relevan
+    if ($rows[count($rows) - 1]["charging"]) {
+        return ["status" => "charging"];
+    }
+
+    // Regresi linear sederhana: level baterai (%) terhadap waktu (menit sejak titik pertama)
+    $t0 = strtotime($rows[0]["logged_at"]);
+    $n = count($rows);
+    $sumX = 0; $sumY = 0; $sumXY = 0; $sumXX = 0;
+
+    foreach ($rows as $row) {
+        $x = (strtotime($row["logged_at"]) - $t0) / 60; // menit
+        $y = (float)$row["battery_level"] * 100; // persen
+        $sumX += $x;
+        $sumY += $y;
+        $sumXY += $x * $y;
+        $sumXX += $x * $x;
+    }
+
+    $denominator = ($n * $sumXX - $sumX * $sumX);
+    if ($denominator == 0) {
+        return null;
+    }
+
+    $slope = ($n * $sumXY - $sumX * $sumY) / $denominator; // persen per menit
+    $currentLevel = (float)$rows[$n - 1]["battery_level"] * 100;
+
+    if ($slope >= -0.01) {
+        // Baterai stabil/naik (bukan lagi charging tapi nggak turun signifikan), nggak ada estimasi masuk akal
+        return ["status" => "stable", "rate_per_min" => round($slope, 3)];
+    }
+
+    $minutesRemaining = $currentLevel / abs($slope);
+
+    return [
+        "status" => "discharging",
+        "rate_per_min" => round($slope, 3),
+        "current_level" => round($currentLevel, 1),
+        "minutes_remaining" => round($minutesRemaining),
+        "sample_points" => $n,
+    ];
+}
+
+function get_discharge_rate_series(PDO $pdo, int $robotId, int $limitPoints = 50): array
+{
+    $rows = get_battery_series($pdo, $robotId, $limitPoints);
+    $result = [];
+
+    for ($i = 1; $i < count($rows); $i++) {
+        $prev = $rows[$i - 1];
+        $curr = $rows[$i];
+        if ($prev["battery_level"] === null || $curr["battery_level"] === null) {
+            continue;
+        }
+        $minutesDiff = (strtotime($curr["logged_at"]) - strtotime($prev["logged_at"])) / 60;
+        if ($minutesDiff <= 0) {
+            continue;
+        }
+        $levelDiff = ((float)$curr["battery_level"] - (float)$prev["battery_level"]) * 100;
+        $result[] = [
+            "logged_at" => $curr["logged_at"],
+            "rate_per_min" => round($levelDiff / $minutesDiff, 4),
+        ];
+    }
+
+    return $result;
+}
 function format_datetime(?string $value): string
 {
     if (!$value) {

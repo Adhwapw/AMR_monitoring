@@ -38,6 +38,21 @@ if ($type === "motor") {
         "motor_left" => $leftSpeed,
         "motor_right" => $rightSpeed,
     ]);
+} elseif ($type === "discharge_rate") {
+    $rows = get_discharge_rate_series($pdo, $robotId);
+
+    $labels = [];
+    $rate = [];
+
+    foreach ($rows as $row) {
+        $labels[] = date("H:i:s", strtotime($row["logged_at"]));
+        $rate[] = $row["rate_per_min"];
+    }
+
+    echo json_encode([
+        "labels" => $labels,
+        "rate" => $rate,
+    ]);
 } else {
     $rows = get_battery_series($pdo, $robotId);
 
