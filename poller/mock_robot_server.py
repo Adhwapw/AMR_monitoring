@@ -15,7 +15,7 @@ SYNC_BYTE = 0x5A
 VERSION_BYTE = 0x01
 
 HOST = "127.0.0.1"
-PORT = 19205
+PORT = 19204  # Robot Status API (nomor 1000-1999) pakai port ini
 
 # Response palsu per API number, dicontek dari dokumentasi Robokit
 FAKE_RESPONSES = {
