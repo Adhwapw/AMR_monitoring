@@ -170,6 +170,7 @@ $sessions = get_all_sessions($pdo);
                         </td>
                         <td class="session-actions">
                             <a href="index.php?session_id=<?= $session["id"] ?>" class="page-btn">Lihat Data</a>
+                            <a href="trips.php?session_id=<?= $session["id"] ?>" class="page-btn">Lihat Trip</a>
                             <a href="export.php?type=combined&session_id=<?= $session["id"] ?>" class="page-btn">Export</a>
                             <form method="post" onsubmit="return confirm('Hapus metadata sesi ini? Data log yang udah kesimpen nggak ikut kehapus.');" style="display:inline;">
                                 <input type="hidden" name="action" value="delete">

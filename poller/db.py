@@ -211,6 +211,41 @@ def insert_task_log(conn, robot_pk: int, logged_at: datetime, task: dict):
     cursor.close()
 
 
+def upsert_stations(conn, robot_pk: int, stations: list, map_name: str = None):
+    """
+    Simpen/update daftar station dari API 1301 (robot_status_station).
+    Pakai upsert (INSERT ... ON DUPLICATE KEY UPDATE) biar aman dipanggil berkali-kali
+    tanpa bikin duplikat, soalnya data ini nggak perlu tabel log per waktu.
+    """
+    if not stations:
+        return
+
+    cursor = conn.cursor()
+    now = datetime.now()
+    for station in stations:
+        cursor.execute(
+            """
+            INSERT INTO robot_stations (robot_id, station_id, station_type, x, y, r, description, map_name, synced_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON DUPLICATE KEY UPDATE
+                station_type = VALUES(station_type),
+                x = VALUES(x),
+                y = VALUES(y),
+                r = VALUES(r),
+                description = VALUES(description),
+                map_name = VALUES(map_name),
+                synced_at = VALUES(synced_at)
+            """,
+            (
+                robot_pk, station.get("id"), station.get("type"),
+                station.get("x"), station.get("y"), station.get("r"),
+                station.get("desc"), map_name, now,
+            ),
+        )
+    conn.commit()
+    cursor.close()
+
+
 def insert_connection_log(conn, robot_pk: int, event_type: str, message: str = None):
     """Catat event koneksi (connected / disconnected / parse_error / timeout)."""
     cursor = conn.cursor()

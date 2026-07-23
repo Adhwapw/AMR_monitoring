@@ -49,3 +49,4 @@ API_ROBOT_IMU = 1014
 API_ROBOT_MOTOR = 1040
 API_ROBOT_CONTROL_LOCK = 1060
 API_ROBOT_TASK = 1020
+API_ROBOT_STATION_LIST = 1301  # data statis, cukup di-refresh sesekali, bukan tiap siklus polling

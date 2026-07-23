@@ -253,6 +253,193 @@ function delete_single_motor_log(PDO $pdo, int $id): int
     return $stmt->rowCount();
 }
 
+// =========================================================
+// Deteksi trip otomatis dari data robot_task_logs
+// Trip = perjalanan dari satu target_id ke target_id lain,
+// dideteksi dari perubahan task_status (RUNNING -> COMPLETED/FAILED/CANCELED)
+// =========================================================
+
+function get_task_logs_for_trips(PDO $pdo, int $robotId, ?string $startDate, ?string $endDate): array
+{
+    $sql = "SELECT logged_at, task_status, task_type, target_id
+            FROM robot_task_logs
+            WHERE robot_id = :robot_id";
+    $params = [":robot_id" => $robotId];
+    if ($startDate) {
+        $sql .= " AND logged_at >= :start_date";
+        $params[":start_date"] = $startDate;
+    }
+    if ($endDate) {
+        $sql .= " AND logged_at <= :end_date";
+        $params[":end_date"] = $endDate;
+    }
+    $sql .= " ORDER BY logged_at ASC";
+
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute($params);
+    return $stmt->fetchAll();
+}
+
+function get_status_logs_for_trips(PDO $pdo, int $robotId, ?string $startDate, ?string $endDate): array
+{
+    $sql = "SELECT logged_at, battery_level, pos_x, pos_y, last_station, current_station
+            FROM robot_status_logs
+            WHERE robot_id = :robot_id";
+    $params = [":robot_id" => $robotId];
+    if ($startDate) {
+        $sql .= " AND logged_at >= :start_date";
+        $params[":start_date"] = $startDate;
+    }
+    if ($endDate) {
+        $sql .= " AND logged_at <= :end_date";
+        $params[":end_date"] = $endDate;
+    }
+    $sql .= " ORDER BY logged_at ASC";
+
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute($params);
+    return $stmt->fetchAll();
+}
+
+// Cari baris status_logs terdekat SEBELUM atau PAS di timestamp tertentu.
+// $statusLogs harus udah terurut ascending by logged_at.
+function find_status_at_or_before(array $statusLogs, string $timestamp): ?array
+{
+    $result = null;
+    foreach ($statusLogs as $row) {
+        if ($row["logged_at"] <= $timestamp) {
+            $result = $row;
+        } else {
+            break;
+        }
+    }
+    return $result;
+}
+
+function compute_trips(array $taskLogs, array $statusLogs, array $stationsById): array
+{
+    $trips = [];
+    $current = null; // trip yang lagi "terbuka"
+
+    foreach ($taskLogs as $row) {
+        $status = $row["task_status"] !== null ? (int)$row["task_status"] : null;
+        $targetId = $row["target_id"];
+
+        // Task lagi RUNNING menuju target tertentu
+        if ($status === 2 && $targetId) {
+            if ($current === null) {
+                // Trip baru mulai
+                $statusAtStart = find_status_at_or_before($statusLogs, $row["logged_at"]);
+                $current = [
+                    "to_station" => $targetId,
+                    "from_station" => $statusAtStart["last_station"] ?? $statusAtStart["current_station"] ?? null,
+                    "started_at" => $row["logged_at"],
+                    "completed_at" => null,
+                    "status" => "berjalan",
+                    "battery_start" => $statusAtStart["battery_level"] ?? null,
+                ];
+            } elseif ($current["to_station"] !== $targetId) {
+                // Target berubah sebelum trip sebelumnya kelar -> tutup yang lama sebagai "terputus"
+                $current["completed_at"] = $row["logged_at"];
+                $current["status"] = "terputus";
+                $trips[] = $current;
+
+                $statusAtStart = find_status_at_or_before($statusLogs, $row["logged_at"]);
+                $current = [
+                    "to_station" => $targetId,
+                    "from_station" => $current["to_station"],
+                    "started_at" => $row["logged_at"],
+                    "completed_at" => null,
+                    "status" => "berjalan",
+                    "battery_start" => $statusAtStart["battery_level"] ?? null,
+                ];
+            }
+            continue;
+        }
+
+        // Task selesai/gagal/dibatalkan -> tutup trip yang lagi terbuka
+        if ($current !== null && in_array($status, [4, 5, 6], true)) {
+            $statusAtEnd = find_status_at_or_before($statusLogs, $row["logged_at"]);
+            $current["completed_at"] = $row["logged_at"];
+            $current["status"] = match ($status) {
+                4 => "selesai",
+                5 => "gagal",
+                6 => "dibatalkan",
+                default => "selesai",
+            };
+            $current["battery_end"] = $statusAtEnd["battery_level"] ?? null;
+            $trips[] = $current;
+            $current = null;
+        }
+    }
+
+    // Kalau masih ada trip yang belum ketutup pas data habis (robot masih jalan pas rentang waktu selesai)
+    if ($current !== null) {
+        $current["status"] = "belum selesai (data terputus)";
+        $trips[] = $current;
+    }
+
+    // Lengkapi tiap trip dengan jarak garis lurus (kalau koordinat station tersedia) dan durasi
+    foreach ($trips as &$trip) {
+        $fromStation = $trip["from_station"] ? ($stationsById[$trip["from_station"]] ?? null) : null;
+        $toStation = $stationsById[$trip["to_station"]] ?? null;
+
+        $trip["distance_m"] = null;
+        if ($fromStation && $toStation) {
+            $trip["distance_m"] = calculate_distance(
+                (float)$fromStation["x"], (float)$fromStation["y"],
+                (float)$toStation["x"], (float)$toStation["y"]
+            );
+        }
+
+        $trip["duration_seconds"] = null;
+        if ($trip["completed_at"]) {
+            $trip["duration_seconds"] = strtotime($trip["completed_at"]) - strtotime($trip["started_at"]);
+        }
+    }
+    unset($trip);
+
+    // Urutan terbaru dulu, biar enak diliat di tabel
+    return array_reverse($trips);
+}
+
+function get_trips_for_robot(PDO $pdo, int $robotId, ?string $startDate = null, ?string $endDate = null): array
+{
+    $taskLogs = get_task_logs_for_trips($pdo, $robotId, $startDate, $endDate);
+    $statusLogs = get_status_logs_for_trips($pdo, $robotId, $startDate, $endDate);
+
+    $stations = get_stations_for_robot($pdo, $robotId);
+    $stationsById = [];
+    foreach ($stations as $s) {
+        $stationsById[$s["station_id"]] = $s;
+    }
+
+    return compute_trips($taskLogs, $statusLogs, $stationsById);
+}
+
+function get_stations_for_robot(PDO $pdo, ?int $robotId = null): array
+{
+    $sql = "SELECT s.*, r.vehicle_id, r.robot_id_str
+            FROM robot_stations s
+            JOIN robots r ON r.id = s.robot_id
+            WHERE 1=1";
+    $params = [];
+    if ($robotId) {
+        $sql .= " AND s.robot_id = :robot_id";
+        $params[":robot_id"] = $robotId;
+    }
+    $sql .= " ORDER BY r.vehicle_id, s.station_id";
+
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute($params);
+    return $stmt->fetchAll();
+}
+
+function calculate_distance(float $x1, float $y1, float $x2, float $y2): float
+{
+    return sqrt(pow($x2 - $x1, 2) + pow($y2 - $y1, 2));
+}
+
 function get_all_sessions(PDO $pdo): array
 {
     $sql = "SELECT s.*, r.vehicle_id, r.robot_id_str

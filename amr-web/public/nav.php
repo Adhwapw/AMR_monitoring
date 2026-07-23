@@ -39,11 +39,6 @@ $navItems = [
         "icon" => '<path d="M20.5 10.5c0 6-8.5 11-8.5 11s-8.5-5-8.5-11a8.5 8.5 0 0 1 17 0z"/><circle cx="12" cy="10.5" r="2.5"/>',
     ],
     [
-        "href" => "trips.php",
-        "label" => "Riwayat Trip",
-        "icon" => '<path d="M5 12h14M13 6l6 6-6 6"/>',
-    ],
-    [
         "href" => "manage_data.php",
         "label" => "Kelola Data",
         "icon" => '<path d="M3 6h18"/><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/><path d="M19 6l-1 14a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/>',

@@ -33,7 +33,10 @@ def poll_one_robot(robot_pk: int, ip: str, port: int):
         # 3. Lokasi
         loc = rk.send_request(sock, config.API_ROBOT_LOC)
 
-        db.insert_status_log(conn, robot_pk, logged_at, battery, loc)
+        # 3b. Kecepatan keseluruhan robot (beda dari speed per motor)
+        speed = rk.send_request(sock, config.API_ROBOT_SPEED)
+
+        db.insert_status_log(conn, robot_pk, logged_at, battery, loc, speed)
 
         # 4. Motor (semua motor, nggak filter motor_names)
         motor = rk.send_request(sock, config.API_ROBOT_MOTOR)
@@ -73,6 +76,31 @@ def poll_one_robot(robot_pk: int, ip: str, port: int):
         conn.close()
 
 
+def sync_stations(robot_pk: int, ip: str, port: int):
+    """
+    Ambil daftar station/titik dari peta yang lagi dimuat robot (API 1301).
+    Dipanggil sekali pas poller start, bukan tiap siklus, soalnya data ini
+    statis dan cuma berubah kalau map robot diganti.
+    """
+    conn = db.get_connection()
+    sock = None
+    try:
+        sock = rk.open_connection(ip, port, timeout=config.TCP_TIMEOUT_SECONDS)
+        station_response = rk.send_request(sock, config.API_ROBOT_STATION_LIST)
+        stations = station_response.get("stations", [])
+        db.upsert_stations(conn, robot_pk, stations)
+        print(f"[{datetime.now()}] Sync {len(stations)} station buat robot_pk={robot_pk}")
+    except (rk.RobokitError, OSError) as e:
+        print(f"[{datetime.now()}] Gagal sync station buat robot_pk={robot_pk}: {e}")
+    finally:
+        if sock:
+            try:
+                sock.close()
+            except OSError:
+                pass
+        conn.close()
+
+
 def main():
     print("Poller AMR dimulai. Tekan Ctrl+C buat berhenti.")
 
@@ -82,6 +110,11 @@ def main():
         pk = db.get_or_create_robot(conn, robot["robot_id_str"], robot["ip"], robot["port"])
         robot_pks[robot["robot_id_str"]] = pk
     conn.close()
+
+    # Sync daftar station sekali di awal (bukan tiap siklus polling)
+    for robot in config.ROBOTS:
+        pk = robot_pks[robot["robot_id_str"]]
+        sync_stations(pk, robot["ip"], robot["port"])
 
     try:
         while True:

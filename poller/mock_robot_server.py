@@ -135,6 +135,16 @@ FAKE_RESPONSES = {
         "move_status_info": "",
         "ret_code": 0,
     },
+    1301: {  # robot_status_station
+        "stations": [
+            {"id": "LM1", "type": "LocationMark", "x": 0.0, "y": 0.0, "r": 0.0, "desc": "titik awal"},
+            {"id": "LM2", "type": "LocationMark", "x": 3.5, "y": 0.07, "r": -0.0064, "desc": ""},
+            {"id": "LM3", "type": "LocationMark", "x": 6.0, "y": 2.5, "r": 1.57, "desc": ""},
+            {"id": "LM4", "type": "LocationMark", "x": 8.0, "y": 5.0, "r": 1.57, "desc": ""},
+            {"id": "CP1", "type": "ChargePoint", "x": -1.5, "y": -2.0, "r": 3.14, "desc": "titik charging"},
+        ],
+        "ret_code": 0,
+    },
 }
 
 
