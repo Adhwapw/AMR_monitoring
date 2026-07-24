@@ -26,7 +26,7 @@ if (!$robotId) {
     die("Robot belum dipilih.");
 }
 
-$trips = get_trips_for_robot($pdo, $robotId, $startDate, $endDate);
+$trips = get_trips_from_table($pdo, $robotId, $startDate, $endDate);
 
 $filename = "robot_trips{$sessionSuffix}_" . date("Ymd_His") . ".csv";
 $columns = [

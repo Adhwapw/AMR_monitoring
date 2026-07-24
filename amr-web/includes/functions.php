@@ -261,7 +261,7 @@ function delete_single_motor_log(PDO $pdo, int $id): int
 
 function get_task_logs_for_trips(PDO $pdo, int $robotId, ?string $startDate, ?string $endDate): array
 {
-    $sql = "SELECT logged_at, task_status, task_type, target_id
+    $sql = "SELECT logged_at, task_status, task_type, target_id, finished_path, unfinished_path
             FROM robot_task_logs
             WHERE robot_id = :robot_id";
     $params = [":robot_id" => $robotId];
@@ -316,6 +316,23 @@ function find_status_at_or_before(array $statusLogs, string $timestamp): ?array
     return $result;
 }
 
+function determine_final_destination(?int $taskType, ?string $targetId, ?array $unfinishedPath): ?string
+{
+    // Task type 3 = path navigation lewat banyak titik perantara.
+    // target_id di sini cuma nunjukin titik perantara yang lagi dituju SAAT INI,
+    // bukan tujuan akhir. Tujuan akhir yang bener itu elemen TERAKHIR di unfinished_path.
+    if ($taskType === 3) {
+        if (!empty($unfinishedPath)) {
+            return end($unfinishedPath);
+        }
+        // unfinished_path udah kosong (hampir/udah nyampe), fallback ke target_id terakhir
+        return $targetId;
+    }
+
+    // Task type 1/2 (navigasi langsung), target_id memang tujuan akhirnya
+    return $targetId;
+}
+
 function compute_trips(array $taskLogs, array $statusLogs, array $stationsById): array
 {
     $trips = [];
@@ -323,30 +340,35 @@ function compute_trips(array $taskLogs, array $statusLogs, array $stationsById):
 
     foreach ($taskLogs as $row) {
         $status = $row["task_status"] !== null ? (int)$row["task_status"] : null;
+        $taskType = $row["task_type"] !== null ? (int)$row["task_type"] : null;
         $targetId = $row["target_id"];
+        $unfinishedPath = $row["unfinished_path"] ? json_decode($row["unfinished_path"], true) : null;
 
-        // Task lagi RUNNING menuju target tertentu
-        if ($status === 2 && $targetId) {
+        $finalDestination = determine_final_destination($taskType, $targetId, $unfinishedPath);
+
+        // Task lagi RUNNING menuju tujuan akhir tertentu
+        if ($status === 2 && $finalDestination) {
             if ($current === null) {
                 // Trip baru mulai
                 $statusAtStart = find_status_at_or_before($statusLogs, $row["logged_at"]);
                 $current = [
-                    "to_station" => $targetId,
+                    "to_station" => $finalDestination,
                     "from_station" => $statusAtStart["last_station"] ?? $statusAtStart["current_station"] ?? null,
                     "started_at" => $row["logged_at"],
                     "completed_at" => null,
                     "status" => "berjalan",
                     "battery_start" => $statusAtStart["battery_level"] ?? null,
                 ];
-            } elseif ($current["to_station"] !== $targetId) {
-                // Target berubah sebelum trip sebelumnya kelar -> tutup yang lama sebagai "terputus"
+            } elseif ($current["to_station"] !== $finalDestination) {
+                // Tujuan akhir BENERAN berubah (bukan cuma titik perantara path yang lagi dilewatin)
+                // -> baru dianggap trip lama terputus, trip baru mulai
                 $current["completed_at"] = $row["logged_at"];
                 $current["status"] = "terputus";
                 $trips[] = $current;
 
                 $statusAtStart = find_status_at_or_before($statusLogs, $row["logged_at"]);
                 $current = [
-                    "to_station" => $targetId,
+                    "to_station" => $finalDestination,
                     "from_station" => $current["to_station"],
                     "started_at" => $row["logged_at"],
                     "completed_at" => null,
@@ -354,6 +376,8 @@ function compute_trips(array $taskLogs, array $statusLogs, array $stationsById):
                     "battery_start" => $statusAtStart["battery_level"] ?? null,
                 ];
             }
+            // Kalau to_station sama (masih di path menuju tujuan yang sama), nggak ngapa-ngapain,
+            // biarin trip yang lagi terbuka terus jalan meskipun target_id perantaranya berubah-ubah.
             continue;
         }
 
@@ -417,6 +441,84 @@ function get_trips_for_robot(PDO $pdo, int $robotId, ?string $startDate = null, 
     return compute_trips($taskLogs, $statusLogs, $stationsById);
 }
 
+// Hitung ulang trip dari data mentah (robot_task_logs dkk), lalu simpan
+// hasilnya secara permanen ke tabel robot_trips. Trip lama di rentang
+// waktu yang sama dihapus dulu biar nggak dobel kalau di-sync berkali-kali.
+function sync_trips_for_robot(PDO $pdo, int $robotId, ?string $startDate = null, ?string $endDate = null): int
+{
+    $trips = get_trips_for_robot($pdo, $robotId, $startDate, $endDate);
+
+    $deleteSql = "DELETE FROM robot_trips WHERE robot_id = :robot_id";
+    $deleteParams = [":robot_id" => $robotId];
+    if ($startDate) {
+        $deleteSql .= " AND started_at >= :start_date";
+        $deleteParams[":start_date"] = $startDate;
+    }
+    if ($endDate) {
+        $deleteSql .= " AND started_at <= :end_date";
+        $deleteParams[":end_date"] = $endDate;
+    }
+    $stmt = $pdo->prepare($deleteSql);
+    $stmt->execute($deleteParams);
+
+    $insertStmt = $pdo->prepare(
+        "INSERT INTO robot_trips (
+            robot_id, from_station, to_station, started_at, completed_at,
+            duration_seconds, distance_m, battery_start, battery_end, status
+        ) VALUES (:robot_id, :from_station, :to_station, :started_at, :completed_at,
+            :duration_seconds, :distance_m, :battery_start, :battery_end, :status)"
+    );
+
+    $count = 0;
+    foreach ($trips as $trip) {
+        $insertStmt->execute([
+            ":robot_id" => $robotId,
+            ":from_station" => $trip["from_station"],
+            ":to_station" => $trip["to_station"],
+            ":started_at" => $trip["started_at"],
+            ":completed_at" => $trip["completed_at"],
+            ":duration_seconds" => $trip["duration_seconds"],
+            ":distance_m" => $trip["distance_m"],
+            ":battery_start" => $trip["battery_start"],
+            ":battery_end" => $trip["battery_end"] ?? null,
+            ":status" => $trip["status"],
+        ]);
+        $count++;
+    }
+
+    return $count;
+}
+
+function get_trips_from_table(PDO $pdo, int $robotId, ?string $startDate = null, ?string $endDate = null): array
+{
+    $sql = "SELECT * FROM robot_trips WHERE robot_id = :robot_id";
+    $params = [":robot_id" => $robotId];
+    if ($startDate) {
+        $sql .= " AND started_at >= :start_date";
+        $params[":start_date"] = $startDate;
+    }
+    if ($endDate) {
+        $sql .= " AND started_at <= :end_date";
+        $params[":end_date"] = $endDate;
+    }
+    $sql .= " ORDER BY started_at DESC";
+
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute($params);
+    return $stmt->fetchAll();
+}
+
+function get_last_trip_sync_info(PDO $pdo, int $robotId): ?array
+{
+    $stmt = $pdo->prepare(
+        "SELECT MAX(synced_at) AS last_synced_at, COUNT(*) AS total_trips
+         FROM robot_trips WHERE robot_id = :robot_id"
+    );
+    $stmt->execute([":robot_id" => $robotId]);
+    $row = $stmt->fetch();
+    return ($row && $row["last_synced_at"]) ? $row : null;
+}
+
 function get_stations_for_robot(PDO $pdo, ?int $robotId = null): array
 {
     $sql = "SELECT s.*, r.vehicle_id, r.robot_id_str
@@ -452,7 +554,8 @@ function get_all_sessions(PDO $pdo): array
 function get_active_session(PDO $pdo): ?array
 {
     $stmt = $pdo->query(
-        "SELECT s.*, r.vehicle_id, r.robot_id_str
+        "SELECT s.*, r.vehicle_id, r.robot_id_str,
+                TIMESTAMPDIFF(SECOND, s.started_at, NOW()) / 60 AS minutes_running
          FROM data_sessions s
          LEFT JOIN robots r ON r.id = s.robot_id
          WHERE s.ended_at IS NULL
@@ -524,7 +627,8 @@ function count_status_logs_in_session(PDO $pdo, array $session): int
 function get_connection_status(PDO $pdo): array
 {
     // Ambil event koneksi terakhir per robot, buat lihat status terkini
-    $sql = "SELECT c.robot_id, r.vehicle_id, r.robot_id_str, c.event_type, c.message, c.occurred_at
+    $sql = "SELECT c.robot_id, r.vehicle_id, r.robot_id_str, c.event_type, c.message, c.occurred_at,
+                   TIMESTAMPDIFF(SECOND, c.occurred_at, NOW()) AS seconds_ago
             FROM connection_logs c
             JOIN robots r ON r.id = c.robot_id
             INNER JOIN (
@@ -602,7 +706,8 @@ function get_latest_status_per_robot(PDO $pdo): array
 function get_latest_connection_event(PDO $pdo, int $robotId): ?array
 {
     $stmt = $pdo->prepare(
-        "SELECT event_type, occurred_at FROM connection_logs
+        "SELECT event_type, occurred_at, TIMESTAMPDIFF(SECOND, occurred_at, NOW()) AS seconds_ago
+         FROM connection_logs
          WHERE robot_id = :robot_id ORDER BY occurred_at DESC LIMIT 1"
     );
     $stmt->execute([":robot_id" => $robotId]);
@@ -620,7 +725,9 @@ function get_effective_connection_status(?array $event): array
         return ["label" => "belum ada data", "class" => "badge-neutral"];
     }
 
-    $secondsAgo = time() - strtotime($event["occurred_at"]);
+    // Selisih waktu dihitung di MySQL (TIMESTAMPDIFF), bukan di PHP, biar nggak
+    // ketemu masalah beda timezone antara server PHP dan waktu yang disimpen poller.
+    $secondsAgo = (int)$event["seconds_ago"];
 
     if ($event["event_type"] === "connected" && $secondsAgo > CONNECTION_STALE_SECONDS) {
         return ["label" => "disconnected", "class" => "badge-error"];

@@ -23,7 +23,7 @@ foreach ($robots as $robot) {
 }
 
 $activeSession = get_active_session($pdo);
-$activeSessionMinutes = $activeSession ? (time() - strtotime($activeSession["started_at"])) / 60 : 0;
+$activeSessionMinutes = $activeSession ? (float)$activeSession["minutes_running"] : 0;
 ?>
 <!DOCTYPE html>
 <html lang="id">

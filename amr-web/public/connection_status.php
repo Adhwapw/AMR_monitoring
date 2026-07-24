@@ -38,6 +38,7 @@ $statuses = get_connection_status($pdo);
                         $connStatus = get_effective_connection_status([
                             "event_type" => $row["event_type"],
                             "occurred_at" => $row["occurred_at"],
+                            "seconds_ago" => $row["seconds_ago"],
                         ]);
                     ?>
                     <tr>

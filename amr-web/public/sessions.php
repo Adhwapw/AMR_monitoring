@@ -67,7 +67,7 @@ $sessions = get_all_sessions($pdo);
 
         <?php if ($activeSession): ?>
             <?php
-                $minutesRunning = (time() - strtotime($activeSession["started_at"])) / 60;
+                $minutesRunning = (float)$activeSession["minutes_running"];
                 $sessionWarningThreshold = 60; // menit
             ?>
             <?php if ($minutesRunning > $sessionWarningThreshold): ?>

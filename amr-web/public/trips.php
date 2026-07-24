@@ -9,6 +9,7 @@ $robotId = isset($_GET["robot_id"]) && $_GET["robot_id"] !== "" ? (int)$_GET["ro
 $startDate = $_GET["start_date"] ?? null;
 $endDate = $_GET["end_date"] ?? null;
 $sessionInfo = null;
+$syncMessage = null;
 
 if (isset($_GET["session_id"]) && $_GET["session_id"] !== "") {
     $sessionInfo = get_session_by_id($pdo, (int)$_GET["session_id"]);
@@ -21,7 +22,13 @@ if (isset($_GET["session_id"]) && $_GET["session_id"] !== "") {
     }
 }
 
-$trips = $robotId ? get_trips_for_robot($pdo, $robotId, $startDate, $endDate) : [];
+if ($_SERVER["REQUEST_METHOD"] === "POST" && ($_POST["action"] ?? "") === "sync" && $robotId) {
+    $syncCount = sync_trips_for_robot($pdo, $robotId, $startDate, $endDate);
+    $syncMessage = "Sync selesai, {$syncCount} trip disimpan/diperbarui.";
+}
+
+$trips = $robotId ? get_trips_from_table($pdo, $robotId, $startDate, $endDate) : [];
+$syncInfo = $robotId ? get_last_trip_sync_info($pdo, $robotId) : null;
 
 // Ringkasan rata-rata durasi per pasangan rute (from -> to), cuma dari trip yang "selesai"
 $routeSummary = [];
@@ -53,9 +60,13 @@ foreach ($trips as $trip) {
     <div class="container">
         <h1>Riwayat Trip (A &rarr; B)</h1>
         <p class="info">
-            Trip dideteksi otomatis dari perubahan status task robot (RUNNING sampai COMPLETED/FAILED/CANCELED),
-            nggak perlu diolah manual dari data mentah lagi.
+            Trip disimpan permanen di tabel <code>robot_trips</code>, nggak dihitung ulang tiap buka halaman.
+            Klik "Sync Trip" buat ngitung ulang dari data mentah terbaru (misal abis poller jalan lagi).
         </p>
+
+        <?php if ($syncMessage): ?>
+            <div class="alert alert-success"><?= htmlspecialchars($syncMessage) ?></div>
+        <?php endif; ?>
 
         <?php if ($sessionInfo): ?>
             <div class="alert alert-success">
@@ -85,6 +96,22 @@ foreach ($trips as $trip) {
             </label>
             <button type="submit">Filter</button>
             <a href="export_trips.php?<?= http_build_query($_GET) ?>" class="btn-export">Export CSV</a>
+        </form>
+
+        <form method="post" class="filter-form" style="margin-top: -8px;">
+            <input type="hidden" name="action" value="sync">
+            <input type="hidden" name="robot_id" value="<?= $robotId ?>">
+            <input type="hidden" name="start_date" value="<?= htmlspecialchars($startDate ?? "") ?>">
+            <input type="hidden" name="end_date" value="<?= htmlspecialchars($endDate ?? "") ?>">
+            <button type="submit" class="btn-export-combined">Sync Trip dari Data Mentah</button>
+            <?php if ($syncInfo): ?>
+                <span class="estimate-muted">
+                    Terakhir sync: <?= format_datetime($syncInfo["last_synced_at"]) ?>,
+                    total <?= $syncInfo["total_trips"] ?> trip tersimpan buat robot ini.
+                </span>
+            <?php else: ?>
+                <span class="estimate-muted">Belum pernah di-sync buat robot ini.</span>
+            <?php endif; ?>
         </form>
 
         <?php if (!empty($routeSummary)): ?>
@@ -134,7 +161,7 @@ foreach ($trips as $trip) {
             </thead>
             <tbody>
                 <?php if (empty($trips)): ?>
-                    <tr><td colspan="9" class="empty">Belum ada trip terdeteksi di rentang waktu ini.</td></tr>
+                    <tr><td colspan="9" class="empty">Belum ada trip tersimpan. Klik "Sync Trip dari Data Mentah" dulu.</td></tr>
                 <?php endif; ?>
                 <?php foreach ($trips as $trip): ?>
                     <?php
