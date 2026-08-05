@@ -31,7 +31,7 @@ $trips = get_trips_from_table($pdo, $robotId, $startDate, $endDate);
 $filename = "robot_trips{$sessionSuffix}_" . date("Ymd_His") . ".csv";
 $columns = [
     "from_station", "to_station", "started_at", "completed_at",
-    "duration_seconds", "distance_m", "battery_start", "battery_end", "status",
+    "duration_seconds", "distance_m", "distance_odo_m", "battery_start", "battery_end", "status",
 ];
 
 header("Content-Type: text/csv; charset=utf-8");

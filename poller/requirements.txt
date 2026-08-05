@@ -4,3 +4,7 @@ venv\Scripts\activate.bat
 
 
 ZcFwsUm
+
+10.2.128.27
+
+19301

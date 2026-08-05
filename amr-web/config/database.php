@@ -4,6 +4,13 @@
 // Koneksi database pakai PDO
 // =========================================================
 
+// Set timezone eksplisit, biar semua fungsi date()/time()/strtotime() di PHP
+// konsisten sama jam laptop (WIB), nggak ikut default php.ini yang kadang
+// masih di-set UTC. Tanpa ini, timestamp yang dibuat PHP (misal started_at
+// sesi) bisa selisih beberapa jam dari timestamp yang dibuat poller Python
+// (yang otomatis pakai jam sistem lokal).
+date_default_timezone_set("Asia/Jakarta");
+
 $DB_HOST = "localhost";
 $DB_PORT = "3306";
 $DB_NAME = "robot_amr_logging";

@@ -97,6 +97,13 @@ if (isset($_GET["from"]) && isset($_GET["to"]) && $_GET["from"] !== "" && $_GET[
         <?php endif; ?>
 
         <h2 class="section-title">Daftar Titik</h2>
+        <input
+            type="text"
+            id="stationSearch"
+            class="station-search-input"
+            placeholder="Cari ID titik, tipe, atau keterangan..."
+            onkeyup="filterStations()"
+        >
         <table>
             <thead>
                 <tr>
@@ -108,12 +115,12 @@ if (isset($_GET["from"]) && isset($_GET["to"]) && $_GET["from"] !== "" && $_GET[
                     <th>Keterangan</th>
                 </tr>
             </thead>
-            <tbody>
+            <tbody id="stationTableBody">
                 <?php if (empty($stations)): ?>
                     <tr><td colspan="6" class="empty">Belum ada data station. Pastikan poller udah sempat sync (restart poller kalau perlu).</td></tr>
                 <?php endif; ?>
                 <?php foreach ($stations as $s): ?>
-                    <tr>
+                    <tr data-search="<?= htmlspecialchars(strtolower($s["station_id"] . " " . ($s["station_type"] ?? "") . " " . ($s["description"] ?? ""))) ?>">
                         <td><?= htmlspecialchars($s["station_id"]) ?></td>
                         <td><?= htmlspecialchars($s["station_type"] ?? "-") ?></td>
                         <td><?= format_number($s["x"], 2) ?></td>
@@ -124,6 +131,24 @@ if (isset($_GET["from"]) && isset($_GET["to"]) && $_GET["from"] !== "" && $_GET[
                 <?php endforeach; ?>
             </tbody>
         </table>
+        <p class="info" id="stationSearchInfo"></p>
     </div>
+
+    <script>
+        function filterStations() {
+            const query = document.getElementById("stationSearch").value.toLowerCase().trim();
+            const rows = document.querySelectorAll("#stationTableBody tr[data-search]");
+            let visibleCount = 0;
+
+            rows.forEach(row => {
+                const match = row.dataset.search.includes(query);
+                row.style.display = match ? "" : "none";
+                if (match) visibleCount++;
+            });
+
+            const info = document.getElementById("stationSearchInfo");
+            info.textContent = query ? `Menampilkan ${visibleCount} dari ${rows.length} titik.` : "";
+        }
+    </script>
 </body>
 </html>

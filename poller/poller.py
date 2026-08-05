@@ -38,7 +38,7 @@ def poll_one_robot(robot_pk: int, ip: str, port: int):
 
         db.insert_status_log(conn, robot_pk, logged_at, battery, loc, speed)
 
-        # 4. Motor (semua motor, nggak filter motor_names)
+        # 4. Motor (semua motor)
         motor = rk.send_request(sock, config.API_ROBOT_MOTOR)
         db.insert_motor_logs(conn, robot_pk, logged_at, motor)
 

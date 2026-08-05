@@ -24,6 +24,26 @@ foreach ($robots as $robot) {
 
 $activeSession = get_active_session($pdo);
 $activeSessionMinutes = $activeSession ? (float)$activeSession["minutes_running"] : 0;
+
+// Data buat gauge baterai robot yang lagi dipilih
+$selectedStatus = $selectedRobotId ? ($statusByRobot[$selectedRobotId] ?? null) : null;
+$selectedBatteryPct = $selectedStatus && $selectedStatus["battery_level"] !== null
+    ? round($selectedStatus["battery_level"] * 100, 1)
+    : null;
+$gaugeColor = "#9aa5b1"; // abu-abu kalau data nggak ada
+if ($selectedBatteryPct !== null) {
+    if ($selectedBatteryPct < 20) {
+        $gaugeColor = "#dc2626"; // merah
+    } elseif ($selectedBatteryPct < 50) {
+        $gaugeColor = "#f59e0b"; // oranye
+    } else {
+        $gaugeColor = "#16a34a"; // hijau
+    }
+}
+// Gauge setengah lingkaran pakai teknik stroke-dasharray, radius 80, keliling setengah = pi*r
+$gaugeRadius = 80;
+$gaugeCircumference = M_PI * $gaugeRadius;
+$gaugeFillLength = $selectedBatteryPct !== null ? ($selectedBatteryPct / 100) * $gaugeCircumference : 0;
 ?>
 <!DOCTYPE html>
 <html lang="id">
@@ -146,10 +166,65 @@ $activeSessionMinutes = $activeSession ? (float)$activeSession["minutes_running"
         </div>
 
         <?php if ($selectedRobotId): ?>
+            <?php $health = get_data_health_summary($pdo, $selectedRobotId); ?>
+            <div class="preview-box health-box">
+                <h2>Kesehatan Data (robot terpilih)</h2>
+                <div class="session-active-info">
+                    <div class="metric">
+                        <span class="metric-label">Total Baris Data</span>
+                        <span class="metric-value"><?= number_format($health["total_rows"]) ?></span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">Rentang Data</span>
+                        <span class="metric-value">
+                            <?= $health["first_logged_at"] ? format_datetime($health["first_logged_at"]) : "-" ?>
+                            &ndash;
+                            <?= $health["last_logged_at"] ? format_datetime($health["last_logged_at"]) : "-" ?>
+                        </span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">Gap Terdeteksi</span>
+                        <span class="metric-value">
+                            <?php if ($health["gap_count"] > 0): ?>
+                                <span class="badge badge-warn"><?= $health["gap_count"] ?> gap</span>
+                            <?php else: ?>
+                                <span class="badge badge-ok">tidak ada</span>
+                            <?php endif; ?>
+                        </span>
+                    </div>
+                </div>
+                <p class="estimate-muted">
+                    Gap dihitung dari selisih waktu antar baris berurutan yang lebih dari 10 detik
+                    (biasanya karena robot/poller sempat disconnect). Cek halaman Status Koneksi buat detailnya.
+                </p>
+            </div>
+        <?php endif; ?>
+
+        <?php if ($selectedRobotId): ?>
             <div class="charts">
-                <div class="chart-box">
-                    <h2>Level Baterai (%)</h2>
-                    <canvas id="batteryChart" height="90"></canvas>
+                <div class="chart-box gauge-box">
+                    <h2>Level Baterai</h2>
+                    <svg viewBox="0 0 200 110" class="battery-gauge">
+                        <path d="M 20 100 A 80 80 0 0 1 180 100"
+                              fill="none" stroke="#e4e7eb" stroke-width="16" stroke-linecap="round" />
+                        <path d="M 20 100 A 80 80 0 0 1 180 100"
+                              fill="none" stroke="<?= $gaugeColor ?>" stroke-width="16" stroke-linecap="round"
+                              stroke-dasharray="<?= $gaugeFillLength ?> <?= $gaugeCircumference ?>" />
+                        <text x="100" y="85" text-anchor="middle" font-size="32" font-weight="700" fill="#1f2933">
+                            <?= $selectedBatteryPct !== null ? $selectedBatteryPct . "%" : "-" ?>
+                        </text>
+                    </svg>
+                    <p class="gauge-caption">
+                        <?php if ($selectedBatteryPct === null): ?>
+                            Belum ada data baterai
+                        <?php elseif ($selectedBatteryPct < 20): ?>
+                            Rendah, perlu segera di-charge
+                        <?php elseif ($selectedBatteryPct < 50): ?>
+                            Sedang
+                        <?php else: ?>
+                            Aman
+                        <?php endif; ?>
+                    </p>
                 </div>
                 <div class="chart-box">
                     <h2>Laju Perubahan Baterai (%/menit)</h2>
@@ -187,16 +262,6 @@ $activeSessionMinutes = $activeSession ? (float)$activeSession["minutes_running"
         }
 
         if (robotId) {
-            loadChart("battery", "batteryChart", (data) => [
-                {
-                    label: "Baterai (%)",
-                    data: data.battery,
-                    borderColor: "#2563eb",
-                    backgroundColor: "rgba(37, 99, 235, 0.1)",
-                    tension: 0.3,
-                },
-            ]);
-
             loadChart("discharge_rate", "dischargeChart", (data) => [
                 {
                     label: "Laju (%/menit)",

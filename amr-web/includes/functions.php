@@ -333,7 +333,41 @@ function determine_final_destination(?int $taskType, ?string $targetId, ?array $
     return $targetId;
 }
 
-function compute_trips(array $taskLogs, array $statusLogs, array $stationsById): array
+function get_odo_logs_for_trips(PDO $pdo, int $robotId, ?string $startDate, ?string $endDate): array
+{
+    $sql = "SELECT logged_at, odo FROM robot_push_logs WHERE robot_id = :robot_id AND odo IS NOT NULL";
+    $params = [":robot_id" => $robotId];
+    if ($startDate) {
+        $sql .= " AND logged_at >= :start_date";
+        $params[":start_date"] = $startDate;
+    }
+    if ($endDate) {
+        $sql .= " AND logged_at <= :end_date";
+        $params[":end_date"] = $endDate;
+    }
+    $sql .= " ORDER BY logged_at ASC";
+
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute($params);
+    return $stmt->fetchAll();
+}
+
+// Cari pembacaan odometer terdekat SEBELUM atau PAS di timestamp tertentu.
+// $odoLogs harus udah terurut ascending by logged_at.
+function find_odo_at_or_before(array $odoLogs, string $timestamp): ?float
+{
+    $result = null;
+    foreach ($odoLogs as $row) {
+        if ($row["logged_at"] <= $timestamp) {
+            $result = (float)$row["odo"];
+        } else {
+            break;
+        }
+    }
+    return $result;
+}
+
+function compute_trips(array $taskLogs, array $statusLogs, array $stationsById, array $odoLogs = []): array
 {
     $trips = [];
     $current = null; // trip yang lagi "terbuka"
@@ -358,6 +392,7 @@ function compute_trips(array $taskLogs, array $statusLogs, array $stationsById):
                     "completed_at" => null,
                     "status" => "berjalan",
                     "battery_start" => $statusAtStart["battery_level"] ?? null,
+                    "odo_start" => find_odo_at_or_before($odoLogs, $row["logged_at"]),
                 ];
             } elseif ($current["to_station"] !== $finalDestination) {
                 // Tujuan akhir BENERAN berubah (bukan cuma titik perantara path yang lagi dilewatin)
@@ -374,6 +409,7 @@ function compute_trips(array $taskLogs, array $statusLogs, array $stationsById):
                     "completed_at" => null,
                     "status" => "berjalan",
                     "battery_start" => $statusAtStart["battery_level"] ?? null,
+                    "odo_start" => find_odo_at_or_before($odoLogs, $row["logged_at"]),
                 ];
             }
             // Kalau to_station sama (masih di path menuju tujuan yang sama), nggak ngapa-ngapain,
@@ -392,6 +428,7 @@ function compute_trips(array $taskLogs, array $statusLogs, array $stationsById):
                 default => "selesai",
             };
             $current["battery_end"] = $statusAtEnd["battery_level"] ?? null;
+            $current["odo_end"] = find_odo_at_or_before($odoLogs, $row["logged_at"]);
             $trips[] = $current;
             $current = null;
         }
@@ -420,6 +457,15 @@ function compute_trips(array $taskLogs, array $statusLogs, array $stationsById):
         if ($trip["completed_at"]) {
             $trip["duration_seconds"] = strtotime($trip["completed_at"]) - strtotime($trip["started_at"]);
         }
+
+        // Jarak riil dari odometer (kalau data push tersedia buat trip ini)
+        $trip["distance_odo_m"] = null;
+        if (isset($trip["odo_start"], $trip["odo_end"]) && $trip["odo_start"] !== null && $trip["odo_end"] !== null) {
+            $diff = $trip["odo_end"] - $trip["odo_start"];
+            // odo itu kumulatif (harusnya nggak pernah turun), kalau ternyata negatif
+            // berarti ada reset/anomali, jangan dipaksa dipakai
+            $trip["distance_odo_m"] = $diff >= 0 ? $diff : null;
+        }
     }
     unset($trip);
 
@@ -431,6 +477,7 @@ function get_trips_for_robot(PDO $pdo, int $robotId, ?string $startDate = null, 
 {
     $taskLogs = get_task_logs_for_trips($pdo, $robotId, $startDate, $endDate);
     $statusLogs = get_status_logs_for_trips($pdo, $robotId, $startDate, $endDate);
+    $odoLogs = get_odo_logs_for_trips($pdo, $robotId, $startDate, $endDate);
 
     $stations = get_stations_for_robot($pdo, $robotId);
     $stationsById = [];
@@ -438,7 +485,7 @@ function get_trips_for_robot(PDO $pdo, int $robotId, ?string $startDate = null, 
         $stationsById[$s["station_id"]] = $s;
     }
 
-    return compute_trips($taskLogs, $statusLogs, $stationsById);
+    return compute_trips($taskLogs, $statusLogs, $stationsById, $odoLogs);
 }
 
 // Hitung ulang trip dari data mentah (robot_task_logs dkk), lalu simpan
@@ -464,9 +511,9 @@ function sync_trips_for_robot(PDO $pdo, int $robotId, ?string $startDate = null,
     $insertStmt = $pdo->prepare(
         "INSERT INTO robot_trips (
             robot_id, from_station, to_station, started_at, completed_at,
-            duration_seconds, distance_m, battery_start, battery_end, status
+            duration_seconds, distance_m, distance_odo_m, battery_start, battery_end, status
         ) VALUES (:robot_id, :from_station, :to_station, :started_at, :completed_at,
-            :duration_seconds, :distance_m, :battery_start, :battery_end, :status)"
+            :duration_seconds, :distance_m, :distance_odo_m, :battery_start, :battery_end, :status)"
     );
 
     $count = 0;
@@ -479,6 +526,7 @@ function sync_trips_for_robot(PDO $pdo, int $robotId, ?string $startDate = null,
             ":completed_at" => $trip["completed_at"],
             ":duration_seconds" => $trip["duration_seconds"],
             ":distance_m" => $trip["distance_m"],
+            ":distance_odo_m" => $trip["distance_odo_m"] ?? null,
             ":battery_start" => $trip["battery_start"],
             ":battery_end" => $trip["battery_end"] ?? null,
             ":status" => $trip["status"],
@@ -506,6 +554,35 @@ function get_trips_from_table(PDO $pdo, int $robotId, ?string $startDate = null,
     $stmt = $pdo->prepare($sql);
     $stmt->execute($params);
     return $stmt->fetchAll();
+}
+
+function get_data_health_summary(PDO $pdo, int $robotId, int $gapThresholdSeconds = 10): array
+{
+    $stmt = $pdo->prepare(
+        "SELECT COUNT(*) AS total_rows, MIN(logged_at) AS first_logged_at, MAX(logged_at) AS last_logged_at
+         FROM robot_status_logs WHERE robot_id = :robot_id"
+    );
+    $stmt->execute([":robot_id" => $robotId]);
+    $summary = $stmt->fetch();
+
+    if (!$summary || (int)$summary["total_rows"] === 0) {
+        return ["total_rows" => 0, "first_logged_at" => null, "last_logged_at" => null, "gap_count" => 0];
+    }
+
+    // Deteksi gap: selisih waktu antar baris berurutan yang lebih lebar dari harusnya
+    // (biasanya karena robot/poller sempat disconnect)
+    $gapStmt = $pdo->prepare(
+        "SELECT COUNT(*) AS gap_count FROM (
+            SELECT TIMESTAMPDIFF(SECOND, LAG(logged_at) OVER (ORDER BY logged_at), logged_at) AS diff_sec
+            FROM robot_status_logs WHERE robot_id = :robot_id
+         ) t WHERE diff_sec > :threshold"
+    );
+    $gapStmt->execute([":robot_id" => $robotId, ":threshold" => $gapThresholdSeconds]);
+    $gapRow = $gapStmt->fetch();
+
+    $summary["gap_count"] = (int)($gapRow["gap_count"] ?? 0);
+    $summary["total_rows"] = (int)$summary["total_rows"];
+    return $summary;
 }
 
 function get_last_trip_sync_info(PDO $pdo, int $robotId): ?array

@@ -46,6 +46,15 @@ foreach ($trips as $trip) {
         $routeSummary[$key]["total_distance"] += $trip["distance_m"];
         $routeSummary[$key]["distance_count"]++;
     }
+    if (isset($trip["distance_odo_m"]) && $trip["distance_odo_m"] !== null) {
+        $routeSummary[$key]["total_odo_distance"] = ($routeSummary[$key]["total_odo_distance"] ?? 0) + $trip["distance_odo_m"];
+        $routeSummary[$key]["odo_distance_count"] = ($routeSummary[$key]["odo_distance_count"] ?? 0) + 1;
+    }
+}
+// Rata-rata durasi per route, dipakai juga buat nandain trip yang anomali (>2x rata-rata)
+$avgDurationByRoute = [];
+foreach ($routeSummary as $route => $summary) {
+    $avgDurationByRoute[$route] = $summary["total_duration"] / $summary["count"];
 }
 ?>
 <!DOCTYPE html>
@@ -54,6 +63,7 @@ foreach ($trips as $trip) {
     <meta charset="UTF-8">
     <title>Riwayat Trip Robot AMR</title>
     <link rel="stylesheet" href="style.css">
+    <script src="vendor/chart.umd.min.js"></script>
 </head>
 <body>
 <?php require_once __DIR__ . "/../includes/nav.php"; ?>
@@ -117,13 +127,15 @@ foreach ($trips as $trip) {
         <?php if (!empty($routeSummary)): ?>
             <div class="preview-box">
                 <h2>Ringkasan Rata-rata per Rute (trip yang selesai)</h2>
-                <table>
+                <canvas id="routeDurationChart" height="80"></canvas>
+                <table style="margin-top: 16px;">
                     <thead>
                         <tr>
                             <th>Rute</th>
                             <th>Jumlah Trip</th>
                             <th>Rata-rata Durasi</th>
                             <th>Jarak Garis Lurus</th>
+                            <th>Jarak Odometer</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -137,11 +149,37 @@ foreach ($trips as $trip) {
                                         ? format_number($summary["total_distance"] / $summary["distance_count"], 2) . " m"
                                         : "-" ?>
                                 </td>
+                                <td>
+                                    <?= ($summary["odo_distance_count"] ?? 0) > 0
+                                        ? format_number($summary["total_odo_distance"] / $summary["odo_distance_count"], 2) . " m"
+                                        : "-" ?>
+                                </td>
                             </tr>
                         <?php endforeach; ?>
                     </tbody>
                 </table>
             </div>
+
+            <script>
+                new Chart(document.getElementById("routeDurationChart"), {
+                    type: "bar",
+                    data: {
+                        labels: <?= json_encode(array_keys($routeSummary)) ?>,
+                        datasets: [{
+                            label: "Rata-rata durasi (detik)",
+                            data: <?= json_encode(array_map(fn($s) => round($s["total_duration"] / $s["count"]), $routeSummary)) ?>,
+                            backgroundColor: "#2563eb",
+                            borderRadius: 4,
+                        }],
+                    },
+                    options: {
+                        responsive: true,
+                        animation: false,
+                        plugins: { legend: { display: false } },
+                        scales: { y: { beginAtZero: true } },
+                    },
+                });
+            </script>
         <?php endif; ?>
 
         <h2 class="section-title">Detail Semua Trip</h2>
@@ -154,6 +192,7 @@ foreach ($trips as $trip) {
                     <th>Selesai</th>
                     <th>Durasi</th>
                     <th>Jarak Garis Lurus</th>
+                    <th>Jarak Odometer</th>
                     <th>Baterai Awal</th>
                     <th>Baterai Akhir</th>
                     <th>Status</th>
@@ -161,7 +200,7 @@ foreach ($trips as $trip) {
             </thead>
             <tbody>
                 <?php if (empty($trips)): ?>
-                    <tr><td colspan="9" class="empty">Belum ada trip tersimpan. Klik "Sync Trip dari Data Mentah" dulu.</td></tr>
+                    <tr><td colspan="10" class="empty">Belum ada trip tersimpan. Klik "Sync Trip dari Data Mentah" dulu.</td></tr>
                 <?php endif; ?>
                 <?php foreach ($trips as $trip): ?>
                     <?php
@@ -172,14 +211,27 @@ foreach ($trips as $trip) {
                             "berjalan" => "badge-ok",
                             default => "badge-neutral",
                         };
+
+                        // Anomali: durasi lebih dari 2x rata-rata rute yang sama (cuma dicek buat trip "selesai")
+                        $routeKey = ($trip["from_station"] ?? "?") . " -> " . $trip["to_station"];
+                        $isAnomaly = $trip["status"] === "selesai"
+                            && $trip["duration_seconds"] !== null
+                            && isset($avgDurationByRoute[$routeKey])
+                            && $trip["duration_seconds"] > 2 * $avgDurationByRoute[$routeKey];
                     ?>
-                    <tr>
+                    <tr class="<?= $isAnomaly ? "row-error" : "" ?>">
                         <td><?= htmlspecialchars($trip["from_station"] ?? "-") ?></td>
                         <td><?= htmlspecialchars($trip["to_station"]) ?></td>
                         <td><?= format_datetime($trip["started_at"]) ?></td>
                         <td><?= $trip["completed_at"] ? format_datetime($trip["completed_at"]) : "-" ?></td>
-                        <td><?= $trip["duration_seconds"] !== null ? $trip["duration_seconds"] . " detik" : "-" ?></td>
+                        <td>
+                            <?= $trip["duration_seconds"] !== null ? $trip["duration_seconds"] . " detik" : "-" ?>
+                            <?php if ($isAnomaly): ?>
+                                <span class="badge badge-error" title="Lebih dari 2x rata-rata rute ini (<?= round($avgDurationByRoute[$routeKey]) ?> detik)">anomali</span>
+                            <?php endif; ?>
+                        </td>
                         <td><?= $trip["distance_m"] !== null ? format_number($trip["distance_m"], 2) . " m" : "-" ?></td>
+                        <td><?= isset($trip["distance_odo_m"]) && $trip["distance_odo_m"] !== null ? format_number($trip["distance_odo_m"], 2) . " m" : "-" ?></td>
                         <td><?= $trip["battery_start"] !== null ? format_number($trip["battery_start"] * 100, 1) . "%" : "-" ?></td>
                         <td><?= isset($trip["battery_end"]) && $trip["battery_end"] !== null ? format_number($trip["battery_end"] * 100, 1) . "%" : "-" ?></td>
                         <td><span class="badge <?= $statusClass ?>"><?= htmlspecialchars($trip["status"]) ?></span></td>
