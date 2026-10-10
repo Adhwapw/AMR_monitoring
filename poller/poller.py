@@ -19,7 +19,8 @@ def poll_one_robot(robot_pk: int, ip: str, port: int):
     sock = None
     try:
         sock = rk.open_connection(ip, port, timeout=config.TCP_TIMEOUT_SECONDS)
-        db.insert_connection_log(conn, robot_pk, "connected")
+        # Cuma dicatat kalau statusnya berubah dari event terakhir (biar tabel nggak membengkak)
+        db.log_connection_change(conn, robot_pk, "connected")
 
         logged_at = datetime.now()
 
@@ -59,13 +60,13 @@ def poll_one_robot(robot_pk: int, ip: str, port: int):
     except (rk.RobokitError, OSError) as e:
         # OSError nyakup socket timeout, connection refused, dll
         print(f"[{datetime.now()}] GAGAL polling robot_pk={robot_pk} ({ip}:{port}): {e}")
-        db.insert_connection_log(conn, robot_pk, "timeout", str(e))
+        db.log_connection_change(conn, robot_pk, "timeout", str(e))
 
     except Exception as e:
         # Jaga-jaga error lain (misal parsing/insert), dicatat juga biar ketahuan
         print(f"[{datetime.now()}] ERROR TAK TERDUGA robot_pk={robot_pk}: {e}")
         traceback.print_exc()
-        db.insert_connection_log(conn, robot_pk, "parse_error", str(e))
+        db.log_connection_change(conn, robot_pk, "parse_error", str(e))
 
     finally:
         if sock:

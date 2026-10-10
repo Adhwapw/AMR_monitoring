@@ -68,7 +68,12 @@ foreach ($routeSummary as $route => $summary) {
 <body>
 <?php require_once __DIR__ . "/../includes/nav.php"; ?>
     <div class="container">
-        <h1>Riwayat Trip (A &rarr; B)</h1>
+        <div class="page-head">
+            <div>
+                <h1>Riwayat Trip</h1>
+                <div class="breadcrumb"><a href="dashboard.php">Home</a> / Riwayat Trip</div>
+            </div>
+        </div>
         <p class="info">
             Trip disimpan permanen di tabel <code>robot_trips</code>, nggak dihitung ulang tiap buka halaman.
             Klik "Sync Trip" buat ngitung ulang dari data mentah terbaru (misal abis poller jalan lagi).
@@ -85,79 +90,89 @@ foreach ($routeSummary as $route => $summary) {
             </div>
         <?php endif; ?>
 
-        <form method="get" class="filter-form">
-            <label>
-                Robot
-                <select name="robot_id">
-                    <?php foreach ($robots as $robot): ?>
-                        <option value="<?= $robot["id"] ?>" <?= (int)$robotId === (int)$robot["id"] ? "selected" : "" ?>>
-                            <?= htmlspecialchars($robot["vehicle_id"] ?? $robot["robot_id_str"]) ?>
-                        </option>
-                    <?php endforeach; ?>
-                </select>
-            </label>
-            <label>
-                Dari
-                <input type="datetime-local" name="start_date" value="<?= htmlspecialchars($startDate ?? "") ?>">
-            </label>
-            <label>
-                Sampai
-                <input type="datetime-local" name="end_date" value="<?= htmlspecialchars($endDate ?? "") ?>">
-            </label>
-            <button type="submit">Filter</button>
-            <a href="export_trips.php?<?= http_build_query($_GET) ?>" class="btn-export">Export CSV</a>
-        </form>
+        <div class="card" style="margin-bottom: 16px;">
+            <div class="card-body">
+                <form method="get" class="filter-form">
+                    <label>
+                        Robot
+                        <select name="robot_id">
+                            <?php foreach ($robots as $robot): ?>
+                                <option value="<?= $robot["id"] ?>" <?= (int)$robotId === (int)$robot["id"] ? "selected" : "" ?>>
+                                    <?= htmlspecialchars($robot["vehicle_id"] ?? $robot["robot_id_str"]) ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                    </label>
+                    <label>
+                        Dari
+                        <input type="datetime-local" name="start_date" value="<?= htmlspecialchars($startDate ?? "") ?>">
+                    </label>
+                    <label>
+                        Sampai
+                        <input type="datetime-local" name="end_date" value="<?= htmlspecialchars($endDate ?? "") ?>">
+                    </label>
+                    <button type="submit">Filter</button>
+                    <a href="export_trips.php?<?= http_build_query($_GET) ?>" class="btn-export">Export CSV</a>
+                </form>
 
-        <form method="post" class="filter-form" style="margin-top: -8px;">
-            <input type="hidden" name="action" value="sync">
-            <input type="hidden" name="robot_id" value="<?= $robotId ?>">
-            <input type="hidden" name="start_date" value="<?= htmlspecialchars($startDate ?? "") ?>">
-            <input type="hidden" name="end_date" value="<?= htmlspecialchars($endDate ?? "") ?>">
-            <button type="submit" class="btn-export-combined">Sync Trip dari Data Mentah</button>
-            <?php if ($syncInfo): ?>
-                <span class="estimate-muted">
-                    Terakhir sync: <?= format_datetime($syncInfo["last_synced_at"]) ?>,
-                    total <?= $syncInfo["total_trips"] ?> trip tersimpan buat robot ini.
-                </span>
-            <?php else: ?>
-                <span class="estimate-muted">Belum pernah di-sync buat robot ini.</span>
-            <?php endif; ?>
-        </form>
+                <form method="post" class="filter-form" style="margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border);">
+                    <input type="hidden" name="action" value="sync">
+                    <input type="hidden" name="robot_id" value="<?= $robotId ?>">
+                    <input type="hidden" name="start_date" value="<?= htmlspecialchars($startDate ?? "") ?>">
+                    <input type="hidden" name="end_date" value="<?= htmlspecialchars($endDate ?? "") ?>">
+                    <button type="submit" class="btn-export btn-export-combined">Sync Trip dari Data Mentah</button>
+                    <?php if ($syncInfo): ?>
+                        <span class="estimate-muted">
+                            Terakhir sync: <?= format_datetime($syncInfo["last_synced_at"]) ?>,
+                            total <?= $syncInfo["total_trips"] ?> trip tersimpan buat robot ini.
+                        </span>
+                    <?php else: ?>
+                        <span class="estimate-muted">Belum pernah di-sync buat robot ini.</span>
+                    <?php endif; ?>
+                </form>
+            </div>
+        </div>
 
         <?php if (!empty($routeSummary)): ?>
-            <div class="preview-box">
-                <h2>Ringkasan Rata-rata per Rute (trip yang selesai)</h2>
-                <canvas id="routeDurationChart" height="80"></canvas>
-                <table style="margin-top: 16px;">
-                    <thead>
-                        <tr>
-                            <th>Rute</th>
-                            <th>Jumlah Trip</th>
-                            <th>Rata-rata Durasi</th>
-                            <th>Jarak Garis Lurus</th>
-                            <th>Jarak Odometer</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php foreach ($routeSummary as $route => $summary): ?>
-                            <tr>
-                                <td><?= htmlspecialchars($route) ?></td>
-                                <td><?= $summary["count"] ?></td>
-                                <td><?= round($summary["total_duration"] / $summary["count"]) ?> detik</td>
-                                <td>
-                                    <?= $summary["distance_count"] > 0
-                                        ? format_number($summary["total_distance"] / $summary["distance_count"], 2) . " m"
-                                        : "-" ?>
-                                </td>
-                                <td>
-                                    <?= ($summary["odo_distance_count"] ?? 0) > 0
-                                        ? format_number($summary["total_odo_distance"] / $summary["odo_distance_count"], 2) . " m"
-                                        : "-" ?>
-                                </td>
-                            </tr>
-                        <?php endforeach; ?>
-                    </tbody>
-                </table>
+            <div class="card">
+                <div class="card-header">
+                    <h2>Ringkasan Rata-rata per Rute <span class="card-sub">trip yang selesai</span></h2>
+                </div>
+                <div class="card-body">
+                    <canvas id="routeDurationChart" height="80"></canvas>
+                    <div class="table-wrap" style="margin-top: 16px;">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Rute</th>
+                                    <th>Jumlah Trip</th>
+                                    <th>Rata-rata Durasi</th>
+                                    <th>Jarak Garis Lurus</th>
+                                    <th>Jarak Odometer</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($routeSummary as $route => $summary): ?>
+                                    <tr>
+                                        <td><?= htmlspecialchars($route) ?></td>
+                                        <td><?= $summary["count"] ?></td>
+                                        <td><?= round($summary["total_duration"] / $summary["count"]) ?> detik</td>
+                                        <td>
+                                            <?= $summary["distance_count"] > 0
+                                                ? format_number($summary["total_distance"] / $summary["distance_count"], 2) . " m"
+                                                : "-" ?>
+                                        </td>
+                                        <td>
+                                            <?= ($summary["odo_distance_count"] ?? 0) > 0
+                                                ? format_number($summary["total_odo_distance"] / $summary["odo_distance_count"], 2) . " m"
+                                                : "-" ?>
+                                        </td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
             </div>
 
             <script>
@@ -182,63 +197,72 @@ foreach ($routeSummary as $route => $summary) {
             </script>
         <?php endif; ?>
 
-        <h2 class="section-title">Detail Semua Trip</h2>
-        <table>
-            <thead>
-                <tr>
-                    <th>Dari</th>
-                    <th>Ke</th>
-                    <th>Mulai</th>
-                    <th>Selesai</th>
-                    <th>Durasi</th>
-                    <th>Jarak Garis Lurus</th>
-                    <th>Jarak Odometer</th>
-                    <th>Baterai Awal</th>
-                    <th>Baterai Akhir</th>
-                    <th>Status</th>
-                </tr>
-            </thead>
-            <tbody>
-                <?php if (empty($trips)): ?>
-                    <tr><td colspan="10" class="empty">Belum ada trip tersimpan. Klik "Sync Trip dari Data Mentah" dulu.</td></tr>
-                <?php endif; ?>
-                <?php foreach ($trips as $trip): ?>
-                    <?php
-                        $statusClass = match ($trip["status"]) {
-                            "selesai" => "badge-ok",
-                            "gagal" => "badge-error",
-                            "dibatalkan", "terputus" => "badge-warn",
-                            "berjalan" => "badge-ok",
-                            default => "badge-neutral",
-                        };
-
-                        // Anomali: durasi lebih dari 2x rata-rata rute yang sama (cuma dicek buat trip "selesai")
-                        $routeKey = ($trip["from_station"] ?? "?") . " -> " . $trip["to_station"];
-                        $isAnomaly = $trip["status"] === "selesai"
-                            && $trip["duration_seconds"] !== null
-                            && isset($avgDurationByRoute[$routeKey])
-                            && $trip["duration_seconds"] > 2 * $avgDurationByRoute[$routeKey];
-                    ?>
-                    <tr class="<?= $isAnomaly ? "row-error" : "" ?>">
-                        <td><?= htmlspecialchars($trip["from_station"] ?? "-") ?></td>
-                        <td><?= htmlspecialchars($trip["to_station"]) ?></td>
-                        <td><?= format_datetime($trip["started_at"]) ?></td>
-                        <td><?= $trip["completed_at"] ? format_datetime($trip["completed_at"]) : "-" ?></td>
-                        <td>
-                            <?= $trip["duration_seconds"] !== null ? $trip["duration_seconds"] . " detik" : "-" ?>
-                            <?php if ($isAnomaly): ?>
-                                <span class="badge badge-error" title="Lebih dari 2x rata-rata rute ini (<?= round($avgDurationByRoute[$routeKey]) ?> detik)">anomali</span>
+        <div class="card">
+            <div class="card-header">
+                <h2>Detail Semua Trip</h2>
+            </div>
+            <div class="card-body flush">
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Dari</th>
+                                <th>Ke</th>
+                                <th>Mulai</th>
+                                <th>Selesai</th>
+                                <th>Durasi</th>
+                                <th>Jarak Garis Lurus</th>
+                                <th>Jarak Odometer</th>
+                                <th>Baterai Awal</th>
+                                <th>Baterai Akhir</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php if (empty($trips)): ?>
+                                <tr><td colspan="10" class="empty">Belum ada trip tersimpan. Klik "Sync Trip dari Data Mentah" dulu.</td></tr>
                             <?php endif; ?>
-                        </td>
-                        <td><?= $trip["distance_m"] !== null ? format_number($trip["distance_m"], 2) . " m" : "-" ?></td>
-                        <td><?= isset($trip["distance_odo_m"]) && $trip["distance_odo_m"] !== null ? format_number($trip["distance_odo_m"], 2) . " m" : "-" ?></td>
-                        <td><?= $trip["battery_start"] !== null ? format_number($trip["battery_start"] * 100, 1) . "%" : "-" ?></td>
-                        <td><?= isset($trip["battery_end"]) && $trip["battery_end"] !== null ? format_number($trip["battery_end"] * 100, 1) . "%" : "-" ?></td>
-                        <td><span class="badge <?= $statusClass ?>"><?= htmlspecialchars($trip["status"]) ?></span></td>
-                    </tr>
-                <?php endforeach; ?>
-            </tbody>
-        </table>
+                            <?php foreach ($trips as $trip): ?>
+                                <?php
+                                    $statusClass = match ($trip["status"]) {
+                                        "selesai" => "badge-ok",
+                                        "gagal" => "badge-error",
+                                        "dibatalkan", "terputus" => "badge-warn",
+                                        "berjalan" => "badge-info",
+                                        default => "badge-neutral",
+                                    };
+
+                                    // Anomali: durasi lebih dari 2x rata-rata rute yang sama (cuma dicek buat trip "selesai")
+                                    $routeKey = ($trip["from_station"] ?? "?") . " -> " . $trip["to_station"];
+                                    $isAnomaly = $trip["status"] === "selesai"
+                                        && $trip["duration_seconds"] !== null
+                                        && isset($avgDurationByRoute[$routeKey])
+                                        && $trip["duration_seconds"] > 2 * $avgDurationByRoute[$routeKey];
+                                ?>
+                                <tr class="<?= $isAnomaly ? "row-error" : "" ?>">
+                                    <td><?= htmlspecialchars($trip["from_station"] ?? "-") ?></td>
+                                    <td><?= htmlspecialchars($trip["to_station"]) ?></td>
+                                    <td><?= format_datetime($trip["started_at"]) ?></td>
+                                    <td><?= $trip["completed_at"] ? format_datetime($trip["completed_at"]) : "-" ?></td>
+                                    <td>
+                                        <?= $trip["duration_seconds"] !== null ? $trip["duration_seconds"] . " detik" : "-" ?>
+                                        <?php if ($isAnomaly): ?>
+                                            <span class="badge badge-error" title="Lebih dari 2x rata-rata rute ini (<?= round($avgDurationByRoute[$routeKey]) ?> detik)">anomali</span>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td><?= $trip["distance_m"] !== null ? format_number($trip["distance_m"], 2) . " m" : "-" ?></td>
+                                    <td><?= isset($trip["distance_odo_m"]) && $trip["distance_odo_m"] !== null ? format_number($trip["distance_odo_m"], 2) . " m" : "-" ?></td>
+                                    <td><?= $trip["battery_start"] !== null ? format_number($trip["battery_start"] * 100, 1) . "%" : "-" ?></td>
+                                    <td><?= isset($trip["battery_end"]) && $trip["battery_end"] !== null ? format_number($trip["battery_end"] * 100, 1) . "%" : "-" ?></td>
+                                    <td><span class="badge <?= $statusClass ?>"><?= htmlspecialchars($trip["status"]) ?></span></td>
+                                </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
     </div>
+    <?php require_once __DIR__ . "/../includes/layout_footer.php"; ?>
 </body>
 </html>

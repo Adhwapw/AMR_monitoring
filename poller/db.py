@@ -313,6 +313,19 @@ def insert_push_log(conn, robot_pk: int, logged_at: datetime, push_data: dict):
 # connection_logs
 # ---------------------------------------------------------
 
+def get_last_connection_event_type(conn, robot_pk: int) -> Optional[str]:
+    """Ambil event_type koneksi terakhir buat robot ini. None kalau belum pernah ada."""
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT event_type FROM connection_logs WHERE robot_id = %s "
+        "ORDER BY occurred_at DESC, id DESC LIMIT 1",
+        (robot_pk,),
+    )
+    row = cursor.fetchone()
+    cursor.close()
+    return row[0] if row else None
+
+
 def insert_connection_log(conn, robot_pk: int, event_type: str, message: str = None):
     """Catat event koneksi (connected / disconnected / parse_error / timeout)."""
     sql = """
@@ -322,3 +335,14 @@ def insert_connection_log(conn, robot_pk: int, event_type: str, message: str = N
     params = (robot_pk, event_type, message, datetime.now())
     _execute(conn, sql, params)
     conn.commit()
+
+
+def log_connection_change(conn, robot_pk: int, event_type: str, message: str = None):
+    """
+    Catat event koneksi HANYA kalau tipenya berubah dari event terakhir.
+    Tanpa ini, tiap siklus polling (2 detik) nulis satu baris "connected" dan
+    tabel membengkak ratusan ribu baris sia-sia. Deteksi "stale" (robot diam-diam
+    mati) tetap jalan di sisi web lewat selisih waktu event terakhir.
+    """
+    if get_last_connection_event_type(conn, robot_pk) != event_type:
+        insert_connection_log(conn, robot_pk, event_type, message)
