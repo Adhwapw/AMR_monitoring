@@ -14,12 +14,17 @@ ROBOTS = [
 ]
 
 # --- Konfigurasi database MySQL ---
+# Bisa dioverride pakai environment variable (misal kalau DB dipindah ke cloud
+# supaya dashboard di Vercel bisa baca data yang ditulis poller lokal):
+#   DB_HOST, DB_PORT, DB_USER, DB_PASS, DB_NAME
+import os
+
 DB_CONFIG = {
-    "host": "localhost",
-    "port": 3306,
-    "user": "root",
-    "password": "",          # isi kalau root MySQL kamu pakai password
-    "database": "robot_amr_logging",
+    "host": os.environ.get("DB_HOST", "localhost"),
+    "port": int(os.environ.get("DB_PORT", "3306")),
+    "user": os.environ.get("DB_USER", "root"),
+    "password": os.environ.get("DB_PASS", ""),  # isi kalau root MySQL kamu pakai password
+    "database": os.environ.get("DB_NAME", "robot_amr_logging"),
 }
 
 # --- Konfigurasi polling ---

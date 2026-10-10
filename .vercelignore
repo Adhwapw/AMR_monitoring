@@ -1,0 +1,6 @@
+# Tidak perlu ikut ter-upload ke Vercel (tetap ada di git)
+poller/
+robot_amr_logging.sql
+.git/
+__pycache__/
+*.pyc
