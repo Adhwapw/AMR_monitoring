@@ -55,7 +55,12 @@ $sessions = get_all_sessions($pdo);
 <body>
 <?php require_once __DIR__ . "/../includes/nav.php"; ?>
     <div class="container">
-        <h1>Sesi Pengambilan Data</h1>
+        <div class="page-head">
+            <div>
+                <h1>Sesi Data</h1>
+                <div class="breadcrumb"><a href="dashboard.php">Home</a> / Sesi Data</div>
+            </div>
+        </div>
         <p class="info">
             Nandain rentang waktu logging dengan konteks eksperimen (kondisi lantai, beban, catatan),
             biar nanti gampang difilter/export per sesi tanpa perlu inget-inget tanggal manual.
@@ -78,110 +83,127 @@ $sessions = get_all_sessions($pdo);
                     nyampur sama data di luar eksperimen.
                 </div>
             <?php endif; ?>
-            <div class="preview-box session-active-box">
-                <h2>Sesi sedang berjalan</h2>
-                <div class="session-active-info">
-                    <div>
-                        <strong><?= htmlspecialchars($activeSession["session_name"]) ?></strong>
-                        <span class="badge badge-ok">berjalan</span>
-                    </div>
-                    <div class="metric"><span class="metric-label">Robot</span>
-                        <span class="metric-value"><?= htmlspecialchars($activeSession["vehicle_id"] ?? "Semua robot") ?></span></div>
-                    <div class="metric"><span class="metric-label">Kondisi lantai</span>
-                        <span class="metric-value"><?= htmlspecialchars($activeSession["floor_condition"] ?? "-") ?></span></div>
-                    <div class="metric"><span class="metric-label">Beban</span>
-                        <span class="metric-value"><?= htmlspecialchars($activeSession["load_note"] ?? "-") ?></span></div>
-                    <div class="metric"><span class="metric-label">Mulai</span>
-                        <span class="metric-value"><?= format_datetime($activeSession["started_at"]) ?></span></div>
-                    <div class="metric"><span class="metric-label">Durasi berjalan</span>
-                        <span class="metric-value"><?= round($minutesRunning) ?> menit</span></div>
+            <div class="card session-active-box">
+                <div class="card-header">
+                    <h2>Sesi sedang berjalan</h2>
+                    <span class="badge badge-ok">berjalan</span>
                 </div>
-                <form method="post" class="delete-form" onsubmit="return confirm('Selesaikan sesi ini sekarang?');">
-                    <input type="hidden" name="action" value="end">
-                    <input type="hidden" name="session_id" value="<?= $activeSession["id"] ?>">
-                    <button type="submit" class="btn-export">Selesaikan Sesi</button>
-                </form>
+                <div class="card-body">
+                    <div class="session-active-info">
+                        <div>
+                            <strong style="font-size: 16px;"><?= htmlspecialchars($activeSession["session_name"]) ?></strong>
+                        </div>
+                        <div class="metric"><span class="metric-label">Robot</span>
+                            <span class="metric-value"><?= htmlspecialchars($activeSession["vehicle_id"] ?? "Semua robot") ?></span></div>
+                        <div class="metric"><span class="metric-label">Kondisi lantai</span>
+                            <span class="metric-value"><?= htmlspecialchars($activeSession["floor_condition"] ?? "-") ?></span></div>
+                        <div class="metric"><span class="metric-label">Beban</span>
+                            <span class="metric-value"><?= htmlspecialchars($activeSession["load_note"] ?? "-") ?></span></div>
+                        <div class="metric"><span class="metric-label">Mulai</span>
+                            <span class="metric-value"><?= format_datetime($activeSession["started_at"]) ?></span></div>
+                        <div class="metric"><span class="metric-label">Durasi berjalan</span>
+                            <span class="metric-value"><?= round($minutesRunning) ?> menit</span></div>
+                    </div>
+                    <form method="post" class="delete-form" onsubmit="return confirm('Selesaikan sesi ini sekarang?');">
+                        <input type="hidden" name="action" value="end">
+                        <input type="hidden" name="session_id" value="<?= $activeSession["id"] ?>">
+                        <button type="submit" class="btn btn-success">Selesaikan Sesi</button>
+                    </form>
+                </div>
             </div>
         <?php else: ?>
-            <div class="preview-box">
-                <h2>Mulai Sesi Baru</h2>
-                <form method="post" class="filter-form session-form">
-                    <input type="hidden" name="action" value="start">
-                    <label>
-                        Nama Sesi
-                        <input type="text" name="session_name" placeholder="misal: Lantai licin - percobaan 1" required>
-                    </label>
-                    <label>
-                        Robot
-                        <select name="robot_id">
-                            <option value="">Semua Robot</option>
-                            <?php foreach ($robots as $robot): ?>
-                                <option value="<?= $robot["id"] ?>"><?= htmlspecialchars($robot["vehicle_id"] ?? $robot["robot_id_str"]) ?></option>
-                            <?php endforeach; ?>
-                        </select>
-                    </label>
-                    <label>
-                        Kondisi Lantai
-                        <input type="text" name="floor_condition" placeholder="misal: licin, kasar, normal">
-                    </label>
-                    <label>
-                        Catatan Beban
-                        <input type="text" name="load_note" placeholder="misal: kosong, penuh 20kg">
-                    </label>
-                    <label style="flex: 1 1 100%;">
-                        Catatan Tambahan
-                        <input type="text" name="notes" placeholder="opsional">
-                    </label>
-                    <button type="submit">Mulai Sesi</button>
-                </form>
+            <div class="card">
+                <div class="card-header">
+                    <h2>Mulai Sesi Baru</h2>
+                </div>
+                <div class="card-body">
+                    <form method="post" class="filter-form session-form">
+                        <input type="hidden" name="action" value="start">
+                        <label>
+                            Nama Sesi
+                            <input type="text" name="session_name" placeholder="misal: Lantai licin - percobaan 1" required>
+                        </label>
+                        <label>
+                            Robot
+                            <select name="robot_id">
+                                <option value="">Semua Robot</option>
+                                <?php foreach ($robots as $robot): ?>
+                                    <option value="<?= $robot["id"] ?>"><?= htmlspecialchars($robot["vehicle_id"] ?? $robot["robot_id_str"]) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </label>
+                        <label>
+                            Kondisi Lantai
+                            <input type="text" name="floor_condition" placeholder="misal: licin, kasar, normal">
+                        </label>
+                        <label>
+                            Catatan Beban
+                            <input type="text" name="load_note" placeholder="misal: kosong, penuh 20kg">
+                        </label>
+                        <label style="flex: 1 1 100%;">
+                            Catatan Tambahan
+                            <input type="text" name="notes" placeholder="opsional">
+                        </label>
+                        <button type="submit">Mulai Sesi</button>
+                    </form>
+                </div>
             </div>
         <?php endif; ?>
 
-        <h2 class="section-title">Riwayat Sesi</h2>
-        <table>
-            <thead>
-                <tr>
-                    <th>Nama Sesi</th>
-                    <th>Robot</th>
-                    <th>Kondisi Lantai</th>
-                    <th>Beban</th>
-                    <th>Mulai</th>
-                    <th>Selesai</th>
-                    <th>Aksi</th>
-                </tr>
-            </thead>
-            <tbody>
-                <?php if (empty($sessions)): ?>
-                    <tr><td colspan="7" class="empty">Belum ada sesi.</td></tr>
-                <?php endif; ?>
-                <?php foreach ($sessions as $session): ?>
-                    <tr>
-                        <td><?= htmlspecialchars($session["session_name"]) ?></td>
-                        <td><?= htmlspecialchars($session["vehicle_id"] ?? "Semua robot") ?></td>
-                        <td><?= htmlspecialchars($session["floor_condition"] ?? "-") ?></td>
-                        <td><?= htmlspecialchars($session["load_note"] ?? "-") ?></td>
-                        <td><?= format_datetime($session["started_at"]) ?></td>
-                        <td>
-                            <?php if ($session["ended_at"]): ?>
-                                <?= format_datetime($session["ended_at"]) ?>
-                            <?php else: ?>
-                                <span class="badge badge-ok">berjalan</span>
+        <div class="card">
+            <div class="card-header">
+                <h2>Riwayat Sesi</h2>
+            </div>
+            <div class="card-body flush">
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Nama Sesi</th>
+                                <th>Robot</th>
+                                <th>Kondisi Lantai</th>
+                                <th>Beban</th>
+                                <th>Mulai</th>
+                                <th>Selesai</th>
+                                <th>Aksi</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php if (empty($sessions)): ?>
+                                <tr><td colspan="7" class="empty">Belum ada sesi.</td></tr>
                             <?php endif; ?>
-                        </td>
-                        <td class="session-actions">
-                            <a href="index.php?session_id=<?= $session["id"] ?>" class="page-btn">Lihat Data</a>
-                            <a href="trips.php?session_id=<?= $session["id"] ?>" class="page-btn">Lihat Trip</a>
-                            <a href="export.php?type=combined&session_id=<?= $session["id"] ?>" class="page-btn">Export</a>
-                            <form method="post" onsubmit="return confirm('Hapus metadata sesi ini? Data log yang udah kesimpen nggak ikut kehapus.');" style="display:inline;">
-                                <input type="hidden" name="action" value="delete">
-                                <input type="hidden" name="session_id" value="<?= $session["id"] ?>">
-                                <button type="submit" class="btn-delete-row" title="Hapus metadata sesi">✕</button>
-                            </form>
-                        </td>
-                    </tr>
-                <?php endforeach; ?>
-            </tbody>
-        </table>
+                            <?php foreach ($sessions as $session): ?>
+                                <tr>
+                                    <td><?= htmlspecialchars($session["session_name"]) ?></td>
+                                    <td><?= htmlspecialchars($session["vehicle_id"] ?? "Semua robot") ?></td>
+                                    <td><?= htmlspecialchars($session["floor_condition"] ?? "-") ?></td>
+                                    <td><?= htmlspecialchars($session["load_note"] ?? "-") ?></td>
+                                    <td><?= format_datetime($session["started_at"]) ?></td>
+                                    <td>
+                                        <?php if ($session["ended_at"]): ?>
+                                            <?= format_datetime($session["ended_at"]) ?>
+                                        <?php else: ?>
+                                            <span class="badge badge-ok">berjalan</span>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td class="session-actions">
+                                        <a href="index.php?session_id=<?= $session["id"] ?>" class="page-btn">Lihat Data</a>
+                                        <a href="trips.php?session_id=<?= $session["id"] ?>" class="page-btn">Lihat Trip</a>
+                                        <a href="export.php?type=combined&session_id=<?= $session["id"] ?>" class="page-btn">Export</a>
+                                        <form method="post" onsubmit="return confirm('Hapus metadata sesi ini? Data log yang udah kesimpen nggak ikut kehapus.');" style="display:inline;">
+                                            <input type="hidden" name="action" value="delete">
+                                            <input type="hidden" name="session_id" value="<?= $session["id"] ?>">
+                                            <button type="submit" class="btn-delete-row" title="Hapus metadata sesi">✕</button>
+                                        </form>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
     </div>
+    <?php require_once __DIR__ . "/../includes/layout_footer.php"; ?>
 </body>
 </html>

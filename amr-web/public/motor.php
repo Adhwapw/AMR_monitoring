@@ -29,31 +29,40 @@ unset($filterParams["page"]);
 <body>
 <?php require_once __DIR__ . "/../includes/nav.php"; ?>
     <div class="container">
-        <h1>Data Motor Robot AMR</h1>
+        <div class="page-head">
+            <div>
+                <h1>Data Motor</h1>
+                <div class="breadcrumb"><a href="dashboard.php">Home</a> / Data Motor</div>
+            </div>
+        </div>
 
-        <form method="get" class="filter-form">
-            <label>
-                Robot
-                <select name="robot_id">
-                    <option value="">Semua Robot</option>
-                    <?php foreach ($robots as $robot): ?>
-                        <option value="<?= $robot["id"] ?>" <?= $robotId === (int)$robot["id"] ? "selected" : "" ?>>
-                            <?= htmlspecialchars($robot["vehicle_id"] ?? $robot["robot_id_str"]) ?>
-                        </option>
-                    <?php endforeach; ?>
-                </select>
-            </label>
-            <label>
-                Dari
-                <input type="datetime-local" name="start_date" value="<?= htmlspecialchars($startDate ?? "") ?>">
-            </label>
-            <label>
-                Sampai
-                <input type="datetime-local" name="end_date" value="<?= htmlspecialchars($endDate ?? "") ?>">
-            </label>
-            <button type="submit">Filter</button>
-            <a href="export.php?type=motor&<?= http_build_query($filterParams) ?>" class="btn-export">Export CSV</a>
-        </form>
+        <div class="card" style="margin-bottom: 16px;">
+            <div class="card-body">
+                <form method="get" class="filter-form">
+                    <label>
+                        Robot
+                        <select name="robot_id">
+                            <option value="">Semua Robot</option>
+                            <?php foreach ($robots as $robot): ?>
+                                <option value="<?= $robot["id"] ?>" <?= $robotId === (int)$robot["id"] ? "selected" : "" ?>>
+                                    <?= htmlspecialchars($robot["vehicle_id"] ?? $robot["robot_id_str"]) ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                    </label>
+                    <label>
+                        Dari
+                        <input type="datetime-local" name="start_date" value="<?= htmlspecialchars($startDate ?? "") ?>">
+                    </label>
+                    <label>
+                        Sampai
+                        <input type="datetime-local" name="end_date" value="<?= htmlspecialchars($endDate ?? "") ?>">
+                    </label>
+                    <button type="submit">Filter</button>
+                    <a href="export.php?type=motor&<?= http_build_query($filterParams) ?>" class="btn-export">Export CSV</a>
+                </form>
+            </div>
+        </div>
 
         <p class="info">
             Menampilkan <span id="rowCount"><?= count($motorLogs) ?></span> dari <?= $totalCount ?> baris.
@@ -64,54 +73,61 @@ unset($filterParams["page"]);
             <?php endif; ?>
         </p>
 
-        <table>
-            <thead>
-                <tr>
-                    <th>Waktu</th>
-                    <th>Robot</th>
-                    <th>Motor</th>
-                    <th>Speed</th>
-                    <th>Position</th>
-                    <th>Current</th>
-                    <th>Temp</th>
-                    <th>Error</th>
-                    <th>Stop</th>
-                    <th></th>
-                </tr>
-            </thead>
-            <tbody id="motorTableBody">
-                <?php if (empty($motorLogs)): ?>
-                    <tr><td colspan="10" class="empty">Belum ada data.</td></tr>
-                <?php endif; ?>
-                <?php foreach ($motorLogs as $row): ?>
-                    <tr class="<?= $row["err"] ? "row-error" : "" ?>" data-id="<?= $row["id"] ?>">
-                        <td><?= format_datetime($row["logged_at"]) ?></td>
-                        <td><?= htmlspecialchars($row["vehicle_id"] ?? $row["robot_id_str"]) ?></td>
-                        <td><?= htmlspecialchars($row["motor_name"] ?? "-") ?></td>
-                        <td><?= format_number($row["speed"]) ?></td>
-                        <td><?= format_number($row["position"]) ?></td>
-                        <td><?= format_number($row["current"], 2) ?></td>
-                        <td><?= format_number($row["temperature"], 1) ?></td>
-                        <td><?= $row["err"] ? "Ya (" . $row["error_code"] . ")" : "Tidak" ?></td>
-                        <td><?= $row["stop"] ? "Ya" : "Tidak" ?></td>
-                        <td><button class="btn-delete-row" data-id="<?= $row["id"] ?>" data-type="motor" title="Hapus baris ini">✕</button></td>
-                    </tr>
-                <?php endforeach; ?>
-            </tbody>
-        </table>
+        <div class="card">
+            <div class="card-body flush">
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Waktu</th>
+                                <th>Robot</th>
+                                <th>Motor</th>
+                                <th>Speed</th>
+                                <th>Position</th>
+                                <th>Current</th>
+                                <th>Temp</th>
+                                <th>Error</th>
+                                <th>Stop</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody id="motorTableBody">
+                            <?php if (empty($motorLogs)): ?>
+                                <tr><td colspan="10" class="empty">Belum ada data.</td></tr>
+                            <?php endif; ?>
+                            <?php foreach ($motorLogs as $row): ?>
+                                <tr class="<?= $row["err"] ? "row-error" : "" ?>" data-id="<?= $row["id"] ?>">
+                                    <td><?= format_datetime($row["logged_at"]) ?></td>
+                                    <td><?= htmlspecialchars($row["vehicle_id"] ?? $row["robot_id_str"]) ?></td>
+                                    <td><?= htmlspecialchars($row["motor_name"] ?? "-") ?></td>
+                                    <td><?= format_number($row["speed"]) ?></td>
+                                    <td><?= format_number($row["position"]) ?></td>
+                                    <td><?= format_number($row["current"], 2) ?></td>
+                                    <td><?= format_number($row["temperature"], 1) ?></td>
+                                    <td><?= $row["err"] ? "Ya (" . $row["error_code"] . ")" : "Tidak" ?></td>
+                                    <td><?= $row["stop"] ? "Ya" : "Tidak" ?></td>
+                                    <td><button class="btn-delete-row" data-id="<?= $row["id"] ?>" data-type="motor" title="Hapus baris ini">✕</button></td>
+                                </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
 
-        <div class="pagination">
-            <a href="?<?= http_build_query(array_merge($filterParams, ["page" => max(1, $page - 1)])) ?>"
-               class="page-btn <?= $page <= 1 ? "disabled" : "" ?>">‹ Sebelumnya</a>
-            <span class="page-info">Halaman <?= $page ?> dari <?= $totalPages ?></span>
-            <a href="?<?= http_build_query(array_merge($filterParams, ["page" => min($totalPages, $page + 1)])) ?>"
-               class="page-btn <?= $page >= $totalPages ? "disabled" : "" ?>">Berikutnya ›</a>
+                <div class="pagination">
+                    <a href="?<?= http_build_query(array_merge($filterParams, ["page" => max(1, $page - 1)])) ?>"
+                       class="page-btn <?= $page <= 1 ? "disabled" : "" ?>">‹ Sebelumnya</a>
+                    <span class="page-info">Halaman <?= $page ?> dari <?= $totalPages ?></span>
+                    <a href="?<?= http_build_query(array_merge($filterParams, ["page" => min($totalPages, $page + 1)])) ?>"
+                       class="page-btn <?= $page >= $totalPages ? "disabled" : "" ?>">Berikutnya ›</a>
+                </div>
+            </div>
         </div>
 
         <div class="danger-zone-link">
             <a href="manage_data.php">Kelola / hapus data dalam jumlah besar &rarr;</a>
         </div>
     </div>
+    <?php require_once __DIR__ . "/../includes/layout_footer.php"; ?>
 
     <script>
         const queryParams = new URLSearchParams(window.location.search);
@@ -182,6 +198,8 @@ unset($filterParams["page"]);
                         const result = await res.json();
                         if (result.success) {
                             btn.closest("tr").remove();
+                            const countEl = document.getElementById("rowCount");
+                            if (countEl) countEl.textContent = Math.max(0, parseInt(countEl.textContent, 10) - 1);
                         } else {
                             alert("Gagal menghapus: " + (result.error ?? "Error tidak diketahui"));
                         }

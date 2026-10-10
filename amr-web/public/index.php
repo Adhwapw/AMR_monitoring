@@ -42,7 +42,12 @@ unset($filterParams["page"]);
 <body>
 <?php require_once __DIR__ . "/../includes/nav.php"; ?>
     <div class="container">
-        <h1>Data Status Robot AMR</h1>
+        <div class="page-head">
+            <div>
+                <h1>Status & Lokasi</h1>
+                <div class="breadcrumb"><a href="dashboard.php">Home</a> / Status & Lokasi</div>
+            </div>
+        </div>
 
         <?php if ($activeSessionInfo): ?>
             <div class="alert alert-success">
@@ -53,30 +58,34 @@ unset($filterParams["page"]);
             </div>
         <?php endif; ?>
 
-        <form method="get" class="filter-form">
-            <label>
-                Robot
-                <select name="robot_id">
-                    <option value="">Semua Robot</option>
-                    <?php foreach ($robots as $robot): ?>
-                        <option value="<?= $robot["id"] ?>" <?= $robotId === (int)$robot["id"] ? "selected" : "" ?>>
-                            <?= htmlspecialchars($robot["vehicle_id"] ?? $robot["robot_id_str"]) ?>
-                        </option>
-                    <?php endforeach; ?>
-                </select>
-            </label>
-            <label>
-                Dari
-                <input type="datetime-local" name="start_date" value="<?= htmlspecialchars($startDate ?? "") ?>">
-            </label>
-            <label>
-                Sampai
-                <input type="datetime-local" name="end_date" value="<?= htmlspecialchars($endDate ?? "") ?>">
-            </label>
-            <button type="submit">Filter</button>
-            <a href="export.php?type=status&<?= http_build_query($filterParams) ?>" class="btn-export">Export CSV</a>
-            <a href="export.php?type=combined&<?= http_build_query($filterParams) ?>" class="btn-export btn-export-combined">Export Gabungan (ML)</a>
-        </form>
+        <div class="card" style="margin-bottom: 16px;">
+            <div class="card-body">
+                <form method="get" class="filter-form">
+                    <label>
+                        Robot
+                        <select name="robot_id">
+                            <option value="">Semua Robot</option>
+                            <?php foreach ($robots as $robot): ?>
+                                <option value="<?= $robot["id"] ?>" <?= $robotId === (int)$robot["id"] ? "selected" : "" ?>>
+                                    <?= htmlspecialchars($robot["vehicle_id"] ?? $robot["robot_id_str"]) ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                    </label>
+                    <label>
+                        Dari
+                        <input type="datetime-local" name="start_date" value="<?= htmlspecialchars($startDate ?? "") ?>">
+                    </label>
+                    <label>
+                        Sampai
+                        <input type="datetime-local" name="end_date" value="<?= htmlspecialchars($endDate ?? "") ?>">
+                    </label>
+                    <button type="submit">Filter</button>
+                    <a href="export.php?type=status&<?= http_build_query($filterParams) ?>" class="btn-export">Export CSV</a>
+                    <a href="export.php?type=combined&<?= http_build_query($filterParams) ?>" class="btn-export btn-export-combined">Export Gabungan (ML)</a>
+                </form>
+            </div>
+        </div>
 
         <p class="info">
             Menampilkan <span id="rowCount"><?= count($statusLogs) ?></span> dari <?= $totalCount ?> baris.
@@ -87,58 +96,65 @@ unset($filterParams["page"]);
             <?php endif; ?>
         </p>
 
-        <table>
-            <thead>
-                <tr>
-                    <th>Waktu</th>
-                    <th>Robot</th>
-                    <th>Baterai (%)</th>
-                    <th>Charging</th>
-                    <th>Posisi X</th>
-                    <th>Posisi Y</th>
-                    <th>Angle</th>
-                    <th>Confidence</th>
-                    <th>Station</th>
-                    <th>Vx (m/s)</th>
-                    <th>Status Gerak</th>
-                    <th></th>
-                </tr>
-            </thead>
-            <tbody id="statusTableBody">
-                <?php if (empty($statusLogs)): ?>
-                    <tr><td colspan="12" class="empty">Belum ada data.</td></tr>
-                <?php endif; ?>
-                <?php foreach ($statusLogs as $row): ?>
-                    <tr data-id="<?= $row["id"] ?>">
-                        <td><?= format_datetime($row["logged_at"]) ?></td>
-                        <td><?= htmlspecialchars($row["vehicle_id"] ?? $row["robot_id_str"]) ?></td>
-                        <td><?= $row["battery_level"] !== null ? format_number($row["battery_level"] * 100, 1) : "-" ?></td>
-                        <td><?= $row["charging"] ? "Ya" : "Tidak" ?></td>
-                        <td><?= format_number($row["pos_x"]) ?></td>
-                        <td><?= format_number($row["pos_y"]) ?></td>
-                        <td><?= format_number($row["angle"]) ?></td>
-                        <td><?= format_number($row["loc_confidence"], 2) ?></td>
-                        <td><?= htmlspecialchars($row["current_station"] ?? "-") ?></td>
-                        <td><?= format_number($row["vx"], 2) ?></td>
-                        <td><?= $row["is_stop"] === null ? "-" : ($row["is_stop"] ? "Diam" : "Bergerak") ?></td>
-                        <td><button class="btn-delete-row" data-id="<?= $row["id"] ?>" data-type="status" title="Hapus baris ini">✕</button></td>
-                    </tr>
-                <?php endforeach; ?>
-            </tbody>
-        </table>
+        <div class="card">
+            <div class="card-body flush">
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Waktu</th>
+                                <th>Robot</th>
+                                <th>Baterai (%)</th>
+                                <th>Charging</th>
+                                <th>Posisi X</th>
+                                <th>Posisi Y</th>
+                                <th>Angle</th>
+                                <th>Confidence</th>
+                                <th>Station</th>
+                                <th>Vx (m/s)</th>
+                                <th>Status Gerak</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody id="statusTableBody">
+                            <?php if (empty($statusLogs)): ?>
+                                <tr><td colspan="12" class="empty">Belum ada data.</td></tr>
+                            <?php endif; ?>
+                            <?php foreach ($statusLogs as $row): ?>
+                                <tr data-id="<?= $row["id"] ?>">
+                                    <td><?= format_datetime($row["logged_at"]) ?></td>
+                                    <td><?= htmlspecialchars($row["vehicle_id"] ?? $row["robot_id_str"]) ?></td>
+                                    <td><?= $row["battery_level"] !== null ? format_number($row["battery_level"] * 100, 1) : "-" ?></td>
+                                    <td><?= $row["charging"] ? "Ya" : "Tidak" ?></td>
+                                    <td><?= format_number($row["pos_x"]) ?></td>
+                                    <td><?= format_number($row["pos_y"]) ?></td>
+                                    <td><?= format_number($row["angle"]) ?></td>
+                                    <td><?= format_number($row["loc_confidence"], 2) ?></td>
+                                    <td><?= htmlspecialchars($row["current_station"] ?? "-") ?></td>
+                                    <td><?= format_number($row["vx"], 2) ?></td>
+                                    <td><?= $row["is_stop"] === null ? "-" : ($row["is_stop"] ? "Diam" : "Bergerak") ?></td>
+                                    <td><button class="btn-delete-row" data-id="<?= $row["id"] ?>" data-type="status" title="Hapus baris ini">✕</button></td>
+                                </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
 
-        <div class="pagination">
-            <a href="?<?= http_build_query(array_merge($filterParams, ["page" => max(1, $page - 1)])) ?>"
-               class="page-btn <?= $page <= 1 ? "disabled" : "" ?>">‹ Sebelumnya</a>
-            <span class="page-info">Halaman <?= $page ?> dari <?= $totalPages ?></span>
-            <a href="?<?= http_build_query(array_merge($filterParams, ["page" => min($totalPages, $page + 1)])) ?>"
-               class="page-btn <?= $page >= $totalPages ? "disabled" : "" ?>">Berikutnya ›</a>
+                <div class="pagination">
+                    <a href="?<?= http_build_query(array_merge($filterParams, ["page" => max(1, $page - 1)])) ?>"
+                       class="page-btn <?= $page <= 1 ? "disabled" : "" ?>">‹ Sebelumnya</a>
+                    <span class="page-info">Halaman <?= $page ?> dari <?= $totalPages ?></span>
+                    <a href="?<?= http_build_query(array_merge($filterParams, ["page" => min($totalPages, $page + 1)])) ?>"
+                       class="page-btn <?= $page >= $totalPages ? "disabled" : "" ?>">Berikutnya ›</a>
+                </div>
+            </div>
         </div>
 
         <div class="danger-zone-link">
             <a href="manage_data.php">Kelola / hapus data dalam jumlah besar &rarr;</a>
         </div>
     </div>
+    <?php require_once __DIR__ . "/../includes/layout_footer.php"; ?>
 
     <script>
         const queryParams = new URLSearchParams(window.location.search);
@@ -211,6 +227,8 @@ unset($filterParams["page"]);
                         const result = await res.json();
                         if (result.success) {
                             btn.closest("tr").remove();
+                            const countEl = document.getElementById("rowCount");
+                            if (countEl) countEl.textContent = Math.max(0, parseInt(countEl.textContent, 10) - 1);
                         } else {
                             alert("Gagal menghapus: " + (result.error ?? "Error tidak diketahui"));
                         }
