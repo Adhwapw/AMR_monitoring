@@ -134,13 +134,24 @@ function build_pagination_query(array $currentParams, int $page): string
 }
 
 // --- Fungsi buat fitur hapus data ---
-// Semua tabel log yang dihitung/dihapus (robots master TIDAK ikut dihapus)
-const LOG_TABLES_WITH_LOGGED_AT = ["robot_status_logs", "robot_motor_logs", "robot_imu_logs", "robot_control_lock_logs"];
+// Semua tabel log yang dihitung/dihapus (robots master TIDAK ikut dihapus).
+// Key = nama tabel, value = kolom waktu yang dipakai buat filter rentang.
+// robot_trips ikut dihapus karena dia data TURUNAN dari task log (biar nggak jadi yatim).
+const LOG_TABLES_WITH_TIME_COLUMN = [
+    "robot_status_logs" => "logged_at",
+    "robot_motor_logs" => "logged_at",
+    "robot_imu_logs" => "logged_at",
+    "robot_control_lock_logs" => "logged_at",
+    "robot_task_logs" => "logged_at",
+    "robot_push_logs" => "logged_at",
+    "robot_trips" => "started_at",
+    "connection_logs" => "occurred_at",
+];
 
 function preview_delete_counts(PDO $pdo, ?int $robotId, ?string $startDate, ?string $endDate): array
 {
     $counts = [];
-    foreach (LOG_TABLES_WITH_LOGGED_AT as $table) {
+    foreach (LOG_TABLES_WITH_TIME_COLUMN as $table => $timeColumn) {
         $sql = "SELECT COUNT(*) AS total FROM {$table} WHERE 1=1";
         $params = [];
         if ($robotId) {
@@ -148,11 +159,11 @@ function preview_delete_counts(PDO $pdo, ?int $robotId, ?string $startDate, ?str
             $params[":robot_id"] = $robotId;
         }
         if ($startDate) {
-            $sql .= " AND logged_at >= :start_date";
+            $sql .= " AND {$timeColumn} >= :start_date";
             $params[":start_date"] = $startDate;
         }
         if ($endDate) {
-            $sql .= " AND logged_at <= :end_date";
+            $sql .= " AND {$timeColumn} <= :end_date";
             $params[":end_date"] = $endDate;
         }
         $stmt = $pdo->prepare($sql);
@@ -163,28 +174,6 @@ function preview_delete_counts(PDO $pdo, ?int $robotId, ?string $startDate, ?str
         $counts[$table] = (int)$stmt->fetch()["total"];
     }
 
-    // connection_logs pakai kolom occurred_at, bukan logged_at
-    $sql = "SELECT COUNT(*) AS total FROM connection_logs WHERE 1=1";
-    $params = [];
-    if ($robotId) {
-        $sql .= " AND robot_id = :robot_id";
-        $params[":robot_id"] = $robotId;
-    }
-    if ($startDate) {
-        $sql .= " AND occurred_at >= :start_date";
-        $params[":start_date"] = $startDate;
-    }
-    if ($endDate) {
-        $sql .= " AND occurred_at <= :end_date";
-        $params[":end_date"] = $endDate;
-    }
-    $stmt = $pdo->prepare($sql);
-    foreach ($params as $key => $value) {
-        $stmt->bindValue($key, $value);
-    }
-    $stmt->execute();
-    $counts["connection_logs"] = (int)$stmt->fetch()["total"];
-
     return $counts;
 }
 
@@ -192,7 +181,7 @@ function delete_logs(PDO $pdo, ?int $robotId, ?string $startDate, ?string $endDa
 {
     $deleted = [];
 
-    foreach (LOG_TABLES_WITH_LOGGED_AT as $table) {
+    foreach (LOG_TABLES_WITH_TIME_COLUMN as $table => $timeColumn) {
         $sql = "DELETE FROM {$table} WHERE 1=1";
         $params = [];
         if ($robotId) {
@@ -200,11 +189,11 @@ function delete_logs(PDO $pdo, ?int $robotId, ?string $startDate, ?string $endDa
             $params[":robot_id"] = $robotId;
         }
         if ($startDate) {
-            $sql .= " AND logged_at >= :start_date";
+            $sql .= " AND {$timeColumn} >= :start_date";
             $params[":start_date"] = $startDate;
         }
         if ($endDate) {
-            $sql .= " AND logged_at <= :end_date";
+            $sql .= " AND {$timeColumn} <= :end_date";
             $params[":end_date"] = $endDate;
         }
         $stmt = $pdo->prepare($sql);
@@ -214,27 +203,6 @@ function delete_logs(PDO $pdo, ?int $robotId, ?string $startDate, ?string $endDa
         $stmt->execute();
         $deleted[$table] = $stmt->rowCount();
     }
-
-    $sql = "DELETE FROM connection_logs WHERE 1=1";
-    $params = [];
-    if ($robotId) {
-        $sql .= " AND robot_id = :robot_id";
-        $params[":robot_id"] = $robotId;
-    }
-    if ($startDate) {
-        $sql .= " AND occurred_at >= :start_date";
-        $params[":start_date"] = $startDate;
-    }
-    if ($endDate) {
-        $sql .= " AND occurred_at <= :end_date";
-        $params[":end_date"] = $endDate;
-    }
-    $stmt = $pdo->prepare($sql);
-    foreach ($params as $key => $value) {
-        $stmt->bindValue($key, $value);
-    }
-    $stmt->execute();
-    $deleted["connection_logs"] = $stmt->rowCount();
 
     return $deleted;
 }
@@ -402,9 +370,12 @@ function compute_trips(array $taskLogs, array $statusLogs, array $stationsById, 
                 $trips[] = $current;
 
                 $statusAtStart = find_status_at_or_before($statusLogs, $row["logged_at"]);
+                // from_station diambil dari posisi AKTUAL robot saat itu (current/last station di
+                // status log), BUKAN dari tujuan trip lama — robotnya belum tentu nyampe sana.
+                $actualFrom = $statusAtStart["current_station"] ?? $statusAtStart["last_station"] ?? null;
                 $current = [
                     "to_station" => $finalDestination,
-                    "from_station" => $current["to_station"],
+                    "from_station" => $actualFrom,
                     "started_at" => $row["logged_at"],
                     "completed_at" => null,
                     "status" => "berjalan",
@@ -703,16 +674,18 @@ function count_status_logs_in_session(PDO $pdo, array $session): int
 }
 function get_connection_status(PDO $pdo): array
 {
-    // Ambil event koneksi terakhir per robot, buat lihat status terkini
+    // Ambil event koneksi terakhir per robot, tepat satu baris per robot
+    // (tie-break id terbesar kalau ada dua event di timestamp yang sama).
     $sql = "SELECT c.robot_id, r.vehicle_id, r.robot_id_str, c.event_type, c.message, c.occurred_at,
                    TIMESTAMPDIFF(SECOND, c.occurred_at, NOW()) AS seconds_ago
             FROM connection_logs c
             JOIN robots r ON r.id = c.robot_id
-            INNER JOIN (
-                SELECT robot_id, MAX(occurred_at) AS max_occurred
-                FROM connection_logs
-                GROUP BY robot_id
-            ) latest ON latest.robot_id = c.robot_id AND latest.max_occurred = c.occurred_at
+            WHERE c.id = (
+                SELECT c2.id FROM connection_logs c2
+                WHERE c2.robot_id = c.robot_id
+                ORDER BY c2.occurred_at DESC, c2.id DESC
+                LIMIT 1
+            )
             ORDER BY c.occurred_at DESC";
 
     $stmt = $pdo->query($sql);
@@ -721,14 +694,16 @@ function get_connection_status(PDO $pdo): array
 
 function get_latest_task_per_robot(PDO $pdo): array
 {
+    // Sama seperti status: tepat satu baris per robot, tie-break pakai id terbesar.
     $sql = "SELECT t.*, r.vehicle_id, r.robot_id_str
             FROM robot_task_logs t
             JOIN robots r ON r.id = t.robot_id
-            INNER JOIN (
-                SELECT robot_id, MAX(logged_at) AS max_logged
-                FROM robot_task_logs
-                GROUP BY robot_id
-            ) latest ON latest.robot_id = t.robot_id AND latest.max_logged = t.logged_at
+            WHERE t.id = (
+                SELECT t2.id FROM robot_task_logs t2
+                WHERE t2.robot_id = t.robot_id
+                ORDER BY t2.logged_at DESC, t2.id DESC
+                LIMIT 1
+            )
             ORDER BY r.vehicle_id";
     $rows = $pdo->query($sql)->fetchAll();
 
@@ -768,14 +743,17 @@ function format_task_type(?int $type): string
 
 function get_latest_status_per_robot(PDO $pdo): array
 {
+    // Subquery korelasi dengan ORDER BY id DESC biar hasilnya TEPAT satu baris per robot,
+    // walaupun ada dua baris dengan logged_at yang persis sama (join MAX(logged_at) bisa dobel).
     $sql = "SELECT s.*, r.vehicle_id, r.robot_id_str
             FROM robot_status_logs s
             JOIN robots r ON r.id = s.robot_id
-            INNER JOIN (
-                SELECT robot_id, MAX(logged_at) AS max_logged
-                FROM robot_status_logs
-                GROUP BY robot_id
-            ) latest ON latest.robot_id = s.robot_id AND latest.max_logged = s.logged_at
+            WHERE s.id = (
+                SELECT s2.id FROM robot_status_logs s2
+                WHERE s2.robot_id = s.robot_id
+                ORDER BY s2.logged_at DESC, s2.id DESC
+                LIMIT 1
+            )
             ORDER BY r.vehicle_id";
     return $pdo->query($sql)->fetchAll();
 }
@@ -835,18 +813,21 @@ function get_battery_series(PDO $pdo, int $robotId, int $limitPoints = 50): arra
 
 function get_motor_speed_series(PDO $pdo, int $robotId, int $limitPoints = 50): array
 {
+    // Ambil N timestamp terbaru (berapa pun jumlah motornya), bukan N*2 baris
+    // yang mengasumsikan tiap timestamp selalu punya tepat 2 baris motor.
     $stmt = $pdo->prepare(
-        "SELECT logged_at, motor_name, speed
-         FROM robot_motor_logs
-         WHERE robot_id = :robot_id
-         ORDER BY logged_at DESC
-         LIMIT :limit"
+        "SELECT logged_at, motor_name, speed FROM (
+            SELECT logged_at, motor_name, speed,
+                   DENSE_RANK() OVER (ORDER BY logged_at DESC) AS rnk
+            FROM robot_motor_logs
+            WHERE robot_id = :robot_id
+        ) t WHERE rnk <= :limit
+        ORDER BY logged_at ASC"
     );
-    // limit dikali 2 karena tiap waktu ada 2 baris (motor kiri & kanan)
     $stmt->bindValue(":robot_id", $robotId, PDO::PARAM_INT);
-    $stmt->bindValue(":limit", $limitPoints * 2, PDO::PARAM_INT);
+    $stmt->bindValue(":limit", $limitPoints, PDO::PARAM_INT);
     $stmt->execute();
-    return array_reverse($stmt->fetchAll());
+    return $stmt->fetchAll();
 }
 function get_combined_export_data(PDO $pdo, ?int $robotId, ?string $startDate, ?string $endDate, int $limit = 100000): array
 {
@@ -975,9 +956,13 @@ function estimate_battery_remaining(PDO $pdo, int $robotId, int $lookbackPoints 
         return null; // data belum cukup buat estimasi yang masuk akal
     }
 
-    // Kalau lagi charging, estimasi "sisa waktu habis" nggak relevan
-    if ($rows[count($rows) - 1]["charging"]) {
-        return ["status" => "charging"];
+    // Kalau di window ini sempat charging (titik mana pun), estimasi "sisa waktu habis"
+    // nggak relevan — regresi linearnya juga bakal kacau karena baterai sempat naik.
+    // Dicek semua titik, bukan cuma yang terakhir.
+    foreach ($rows as $row) {
+        if (!empty($row["charging"])) {
+            return ["status" => "charging"];
+        }
     }
 
     // Regresi linear sederhana: level baterai (%) terhadap waktu (menit sejak titik pertama)
@@ -1023,16 +1008,21 @@ function get_discharge_rate_series(PDO $pdo, int $robotId, int $limitPoints = 50
     $rows = get_battery_series($pdo, $robotId, $limitPoints);
     $result = [];
 
+    // Interval antar titik yang lebih panjang dari ini dianggap gap (poller/robot sempat mati),
+    // lajunya dilewati biar nggak jadi rata-rata menyesatkan selama downtime.
+    $maxIntervalSeconds = 600;
+
     for ($i = 1; $i < count($rows); $i++) {
         $prev = $rows[$i - 1];
         $curr = $rows[$i];
         if ($prev["battery_level"] === null || $curr["battery_level"] === null) {
             continue;
         }
-        $minutesDiff = (strtotime($curr["logged_at"]) - strtotime($prev["logged_at"])) / 60;
-        if ($minutesDiff <= 0) {
+        $secondsDiff = strtotime($curr["logged_at"]) - strtotime($prev["logged_at"]);
+        if ($secondsDiff <= 0 || $secondsDiff > $maxIntervalSeconds) {
             continue;
         }
+        $minutesDiff = $secondsDiff / 60;
         $levelDiff = ((float)$curr["battery_level"] - (float)$prev["battery_level"]) * 100;
         $result[] = [
             "logged_at" => $curr["logged_at"],
@@ -1056,4 +1046,63 @@ function format_number($value, int $decimals = 3): string
         return "-";
     }
     return number_format((float)$value, $decimals);
+}
+
+// =========================================================
+// Statistik ringkas buat kartu dashboard ala ElaAdmin
+// =========================================================
+
+function get_dashboard_stats(PDO $pdo): array
+{
+    $stats = [
+        "robots_total" => 0,
+        "robots_online" => 0,
+        "avg_battery" => null,
+        "trips_today" => 0,
+    ];
+
+    $stats["robots_total"] = (int)$pdo->query("SELECT COUNT(*) FROM robots")->fetchColumn();
+
+    // Rata-rata baterai dari status TERAKHIR tiap robot (tepat satu baris per robot)
+    $row = $pdo->query(
+        "SELECT AVG(s.battery_level) AS avg_batt
+         FROM robot_status_logs s
+         WHERE s.battery_level IS NOT NULL AND s.id = (
+             SELECT s2.id FROM robot_status_logs s2
+             WHERE s2.robot_id = s.robot_id
+             ORDER BY s2.logged_at DESC, s2.id DESC
+             LIMIT 1
+         )"
+    )->fetch();
+    if ($row && $row["avg_batt"] !== null) {
+        $stats["avg_battery"] = (float)$row["avg_batt"] * 100;
+    }
+
+    // Trip yang mulai hari ini (waktu server DB)
+    $stats["trips_today"] = (int)$pdo->query(
+        "SELECT COUNT(*) FROM robot_trips WHERE started_at >= CURDATE()"
+    )->fetchColumn();
+
+    // Robot online = event koneksi terakhir "connected" dan belum stale
+    foreach (get_connection_status($pdo) as $cs) {
+        if (get_effective_connection_status($cs)["label"] === "connected") {
+            $stats["robots_online"]++;
+        }
+    }
+
+    return $stats;
+}
+
+function get_recent_trips(PDO $pdo, int $limit = 5): array
+{
+    $stmt = $pdo->prepare(
+        "SELECT t.*, r.vehicle_id, r.robot_id_str
+         FROM robot_trips t
+         JOIN robots r ON r.id = t.robot_id
+         ORDER BY t.started_at DESC
+         LIMIT :limit"
+    );
+    $stmt->bindValue(":limit", $limit, PDO::PARAM_INT);
+    $stmt->execute();
+    return $stmt->fetchAll();
 }

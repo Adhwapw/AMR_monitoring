@@ -18,25 +18,30 @@ if ($type === "motor") {
     $rows = get_motor_speed_series($pdo, $robotId);
 
     $labels = [];
-    $leftSpeed = [];
-    $rightSpeed = [];
     $grouped = [];
+    $motorNames = [];
 
     foreach ($rows as $row) {
         $time = $row["logged_at"];
-        $grouped[$time][$row["motor_name"]] = (float)$row["speed"];
+        $name = $row["motor_name"] ?? "motor";
+        $grouped[$time][$name] = (float)$row["speed"];
+        $motorNames[$name] = true;
     }
+    $motorNames = array_keys($motorNames);
+    sort($motorNames);
 
+    $series = [];
     foreach ($grouped as $time => $motors) {
         $labels[] = date("H:i:s", strtotime($time));
-        $leftSpeed[] = $motors["motor_left"] ?? null;
-        $rightSpeed[] = $motors["motor_right"] ?? null;
+        foreach ($motorNames as $name) {
+            $series[$name][] = $motors[$name] ?? null;
+        }
     }
 
     echo json_encode([
         "labels" => $labels,
-        "motor_left" => $leftSpeed,
-        "motor_right" => $rightSpeed,
+        "motor_names" => $motorNames,
+        "series" => $series,
     ]);
 } elseif ($type === "discharge_rate") {
     $rows = get_discharge_rate_series($pdo, $robotId);
